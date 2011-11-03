@@ -5,7 +5,7 @@
 #include <Python.h>
 /*
 #include <python/bytesobject.h>
-*/
+ */
 
 #ifdef HAVE_CONFIG_H
 #    include "config.h"
@@ -21,6 +21,9 @@
 #define PYTHON_SCRIPT "access.py"
 
 struct access_sys_t {
+	PyObject *callback_open;
+	PyObject *callback_close;
+	PyObject *callback_control;
 	PyObject *callback_block;
 };
 
@@ -46,7 +49,7 @@ access_set_callback(PyObject *self, PyObject *args)
 {
 	int r;
 	const char *type;
-	PyObject *callback, *py_callback;
+	PyObject *callback;
 
 	assert(g_sys);
 
@@ -59,7 +62,19 @@ access_set_callback(PyObject *self, PyObject *args)
 		return NULL;
 	}
 
-	if (!strcmp(type, "block")) {
+	if (!strcmp(type, "open")) {
+		Py_XDECREF(g_sys->callback_open);
+		Py_INCREF(callback);
+		g_sys->callback_open = callback;
+	} else if (!strcmp(type, "close")) {
+		Py_XDECREF(g_sys->callback_close);
+		Py_INCREF(callback);
+		g_sys->callback_close = callback;
+	} else if (!strcmp(type, "control")) {
+		Py_XDECREF(g_sys->callback_control);
+		Py_INCREF(callback);
+		g_sys->callback_control = callback;
+	} else if (!strcmp(type, "block")) {
 		Py_XDECREF(g_sys->callback_block);
 		Py_INCREF(callback);
 		g_sys->callback_block = callback;
@@ -222,16 +237,16 @@ Block(access_t *p_access)
 	char *buf;
 	Py_ssize_t buf_len;
 
-/*
-	msg_Info(p_access, "!!!! Python !!!! Got block call: %d", p_access->info.b_eof);
-*/
-
 	if (p_access->p_sys->callback_block) {
 		result = PyObject_CallFunction(p_access->p_sys->callback_block, "");
 
-/*
-		msg_Info(p_access, "Result: %p", result);
-*/
+		if (PyErr_Occurred()) {
+			p_access->b_die = true;
+			PyErr_Print();
+			return NULL;
+		}
+
+		assert(result);
 
 		if (result == Py_None) {
 			p_access->info.b_eof = true;
@@ -241,7 +256,9 @@ Block(access_t *p_access)
 			p_block = block_New(p_access, buf_len);
 			memcpy(p_block->p_buffer, buf, buf_len);
 			p_access->info.i_pos += p_block->i_buffer;
-			msg_Info(p_access, "Pos: %u", p_access->info.i_pos);
+/*
+			msg_Info(p_access, "Pos: %llu", p_access->info.i_pos);
+*/
 		}
 
 		Py_XDECREF(result);
