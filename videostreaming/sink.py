@@ -165,19 +165,21 @@ if __name__ == '__main__':
 	#src = gst.element_factory_make("v4l2src")
 
 	src = gst.element_factory_make("videotestsrc")
-	encoder = gst.element_factory_make("x264enc")
-	encoder.set_property('bitrate', 256)
-	muxer = gst.element_factory_make("mpegtsmux")
+	encoder = gst.element_factory_make("ffenc_h263")
+	#muxer = gst.element_factory_make("mpegtsmux")
 
 	sink = CCNSink()
 	encoder.get_pad("sink").connect("notify::caps", sink.retrieve_framerate)
 	transmitter = CCNTransmitter('/videostream', sink)
 
 	pipeline = gst.Pipeline()
-	pipeline.add(src, encoder, muxer, sink)
+	pipeline.add(src, encoder, sink)
 
-	gst.element_link_many(src, encoder, muxer, sink)
-#	src.link(encoder)
+#	gst.element_link_many(src, encoder, muxer, sink)
+
+	caps = gst.caps_from_string("video/x-raw-yuv,width=352,height=288")
+	src.link_filtered(encoder, caps)
+	encoder.link(sink)
 #	encoder.link(muxer)
 #	muxer.link(sink)
 

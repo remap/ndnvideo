@@ -143,22 +143,23 @@ if __name__ == '__main__':
 		return True
 
 #	src = gst.element_factory_make('filesrc')
-#	src.set_property('location', 'test.ts')
+#	src.set_property('location', 'test.bin')
 
 	receiver = Receiver('/videostream')
 	src = CCNSrc('source')
 	src.set_receiver(receiver)
 	receiver.start()
 
-	demuxer = gst.element_factory_make('mpegtsdemux')
-	decoder = gst.element_factory_make('ffdec_h264')
+#	demuxer = gst.element_factory_make('mpegtsdemux')
+	decoder = gst.element_factory_make('ffdec_h263')
 	sink = gst.element_factory_make('xvimagesink')
 
 	pipeline = gst.Pipeline()
-	pipeline.add(src, demuxer, decoder, sink)
+	pipeline.add(src, decoder, sink)
 
-	src.link(demuxer)
-	demuxer.connect("pad-added", on_dynamic_pad)
+	caps = gst.caps_from_string('video/x-h263,width=352,height=288,framerate=30/1')
+	src.link_filtered(decoder, caps)
+#	demuxer.connect("pad-added", on_dynamic_pad)
 	decoder.link(sink)
 
 	#gst.element_link_many(src, demuxer, decoder, sink)
