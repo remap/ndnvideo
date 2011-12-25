@@ -1,4 +1,4 @@
-import struct, time, Queue
+import struct, time, Queue, bisect, threading
 from operator import itemgetter
 from pyccn import CCN, Closure, ContentObject, Interest, Name, Key
 
@@ -57,6 +57,8 @@ class CCNBuffer(Queue.Queue):
 			if co[1][1].matchesInterest(interest):
 				return self.queue.pop(co[0])[1]
 
+		return None
+
 		for co in enumerate(self.queue):
 			print "%d %s" % (co[0], co[1][1].name)
 
@@ -66,8 +68,7 @@ class CCNBuffer(Queue.Queue):
 		now = time.time()
 		then = now - diff
 
-		ret = []
-		new = []
+		ret, new = [], []
 		for co in self.queue:
 			if co[0] < then:
 				ret.append(co[1])
@@ -148,8 +149,47 @@ class CCNBuffer(Queue.Queue):
 		finally:
 			self.not_empty.release()
 
+class Interest:
+	def __init__(self, i):
+		self.interest = i
+		self.name = i.name
+		self.namelen = len(self.name)
+
+	def __lt__(self, other):
+		return self.namelen >= other
+
+	def get(self):
+		return self.interest
+
+class InterestTable:
+	interests = []
+
+	def __init__(self):
+		self.mutex = threading.Lock()
+
+	def add(self, interest):
+		self.mutex.acquire()
+		try:
+			bisect.insort(self.interests, Interest(interest))
+		finally:
+			self.mutex.release()
+
+	def removeMatch(self, co):
+		self.mutex.acquire()
+		try:
+			for i in enumerate(self.interests):
+				inter = i[1].get()
+				if co.matchesInterest(inter):
+					self.interests.pop(i[0])
+					return inter
+
+			return None
+		finally:
+			self.mutex.release()
+
 class FlowController(Closure.Closure):
 	queue = CCNBuffer(100)
+	unmatched_interests = InterestTable()
 
 	def __init__(self, prefix, handle):
 		self.prefix = Name.Name(prefix)
@@ -159,6 +199,11 @@ class FlowController(Closure.Closure):
 		handle.setInterestFilter(self.prefix, self)
 
 	def put(self, co):
+		if self.unmatched_interests.removeMatch(co):
+			print "Interest already issued"
+			self.handle.put(co)
+			return
+
 		co = self.queue.put(co)
 		if co:
 			print "Overflow; pushing: %s" % co.name
@@ -177,13 +222,16 @@ class FlowController(Closure.Closure):
 #		if (answer_kind & Interest.AOK_NEW) == 0:
 #			return Closure.RESULT_OK
 
-		print "before"
 		try:
 			co = self.queue.get_element(info.Interest, timeout=0.2)
 		except Queue.Empty:
-			return Closure.RESULT_OK
+			co = None
 
-		print "after"
+		if not co:
+			print "Interest not queued, remembering..."
+			self.unmatched_interests.add(info.Interest)
+			return Closure.RESULT_INTEREST_CONSUMED
+
 		print "serving %s" % co.name
 		self.handle.put(co)
 		self.queue.task_done()
