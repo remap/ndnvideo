@@ -1,10 +1,8 @@
 #! /usr/bin/env python
 
-import Queue, struct
-import sys, threading
+import Queue, struct, sys, threading, math
 import traceback
-from pyccn import *
-
+import pyccn
 
 class CCNTransmitter():
 	_chunk_size = 4000
@@ -14,16 +12,15 @@ class CCNTransmitter():
 	def __init__(self, uri, sink):
 		self._sink = sink
 
-		self._handle = CCN.CCN()
-		self._basename = Name.Name(uri)
+		self._handle = pyccn.CCN()
+		self._basename = pyccn.Name(uri)
+		self._name_segments = self._basename.append("segments")
+		self._name_frames = self._basename.append("frames")
 		self._key = self._handle.getDefaultKey()
 		self._flow_controller = utils.FlowController(self._basename, self._handle)
 
-		si = ContentObject.SignedInfo()
-		si.type = ContentObject.ContentType.CCN_CONTENT_DATA
-		si.publisherPublicKeyDigest = self._key.publicKeyID
-		si.keyLocator = Key.KeyLocator(self._key)
-		self._signed_info = si
+		self._signed_info = pyccn.SignedInfo(self._key.publicKeyID, pyccn.KeyLocator(self._key))
+		self._signed_info_frames = pyccn.SignedInfo(self._key.publicKeyID, pyccn.KeyLocator(self._key))
 
 	def start(self):
 		self._sender_thread = threading.Thread(target=self.sender)
@@ -34,13 +31,13 @@ class CCNTransmitter():
 		self._running = False
 		self._sender_thread.join()
 
-	def preparePacket(self, segment, data):
-		name = Name.Name(self._basename)
-		name.appendSegment(segment)
+	def preparePacket(self, segment, left, data):
+		name = self._name_segments.appendSegment(segment)
 
 		print("preparing %s" % name)
 
-		co = ContentObject.ContentObject(name, data, self._signed_info)
+		packet = utils.buffer2packet(left, data)
+		co = pyccn.ContentObject(name, packet, self._signed_info)
 		co.sign(self._key)
 
 		return co
@@ -52,20 +49,28 @@ class CCNTransmitter():
 				return
 
 			try:
-				buffer = self._sink.queue.get(block=False)
+				entry = self._sink.queue.get(block=False)
 			except Queue.Empty:
 				return
 
-			chunk_off = 0
-			while chunk_off < buffer.size:
-				chunk_size = min(self._chunk_size, buffer.size - chunk_off)
-				chunk = buffer.create_sub(chunk_off, chunk_size)
-				chunk_off += chunk_size
+			frame, buffer = entry
 
-				packet = self.preparePacket(self._segment, chunk.data)
+			chunk_size = self._chunk_size - utils.packet_hdr_len
+			nochunks = int(math.ceil(buffer.size / float(chunk_size)))
+
+			data_off = 0
+			while data_off < buffer.size:
+				assert(nochunks > 0)
+				data_size = min(chunk_size, buffer.size - data_off)
+				chunk = buffer.create_sub(data_off, data_size)
+				data_off += data_size
+
+				nochunks -= 1
+				packet = self.preparePacket(self._segment, nochunks, chunk)
 				self._segment += 1
 
 				self._flow_controller.put(packet)
+			assert(nochunks == 0)
 
 			self._sink.queue.task_done()
 
