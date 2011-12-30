@@ -1,15 +1,35 @@
-import struct, time, Queue, bisect, threading
+import pygst
+pygst.require('0.10')
+import gst
+
+import struct, time, Queue, bisect, threading, math
 from operator import itemgetter
-from pyccn import CCN, Closure, ContentObject, Interest, Name, Key
+import pyccn
+
+packet_hdr = "!IQQ"
+packet_hdr_len = struct.calcsize(packet_hdr)
 
 def packet(name, data, key):
-	co = ContentObject.ContentObject()
-	co.name = Name.Name(name)
+	co = pyccn.ContentObject()
+	co.name = pyccn.Name(name)
 	co.content = data
 	co.signedInfo.publisherPublicKeyDigest = key.publicKeyID
-	co.signedInfo.keyLocator = Key.KeyLocator(key)
+	co.signedInfo.keyLocator = pyccn.KeyLocator(key)
 	co.sign(key)
 	return co
+
+def buffer2packet(left, buffer):
+	global packet_hdr
+	return struct.pack(packet_hdr, left, buffer.timestamp, buffer.duration) + buffer.data
+
+def packet2buffer(packet):
+	global packet_hdr, packet_hdr_len
+
+	buf = gst.Buffer(packet[packet_hdr_len:])
+	#left = 0
+	left, buf.timestamp, buf.duration = struct.unpack_from(packet_hdr, packet)
+
+	return left, buf
 
 class RingBuffer:
 	def __init__(self, size):
@@ -33,7 +53,7 @@ class CCNBuffer(Queue.Queue):
 		raise NotImplementedError()
 
 	def _put(self, item):
-		if not isinstance(item, ContentObject.ContentObject):
+		if not isinstance(item, pyccn.ContentObject):
 			raise ValueError("Item needs to be of ContentObject type")
 
 #		if self._qsize() >= self.maxsize:
@@ -41,7 +61,7 @@ class CCNBuffer(Queue.Queue):
 
 #		if item in self.queue:
 #			raise ValueError("Item %s is already in the buffer" % item)
-#		item_name = Name.Name(item.name)
+#		item_name = pyccn.Name(item.name)
 #		name = str(item_name)
 		self.queue.append((time.time(), item))
 
@@ -187,12 +207,12 @@ class InterestTable:
 		finally:
 			self.mutex.release()
 
-class FlowController(Closure.Closure):
+class FlowController(pyccn.Closure):
 	queue = CCNBuffer(100)
 	unmatched_interests = InterestTable()
 
 	def __init__(self, prefix, handle):
-		self.prefix = Name.Name(prefix)
+		self.prefix = pyccn.Name(prefix)
 		self.handle = handle
 
 		self.cleanup_time = 15 * 60 # keep responses for 15 min
@@ -210,17 +230,17 @@ class FlowController(Closure.Closure):
 			self.handle.put(co)
 
 	def upcall(self, kind, info):
-		if kind in [Closure.UPCALL_FINAL, Closure.UPCALL_CONSUMED_INTEREST]:
-			return Closure.RESULT_OK
+		if kind in [pyccn.UPCALL_FINAL, pyccn.UPCALL_CONSUMED_INTEREST]:
+			return pyccn.RESULT_OK
 
-		if kind != Closure.UPCALL_INTEREST:
+		if kind != pyccn.UPCALL_INTEREST:
 			print("Got weird upcall kind: %d" % kind)
-			return Closure.RESULT_ERR
+			return pyccn.RESULT_ERR
 
 #		answer_kind = info.Interest.get_aok_value()
 #		print "answer_kind %d" % answer_kind
-#		if (answer_kind & Interest.AOK_NEW) == 0:
-#			return Closure.RESULT_OK
+#		if (answer_kind & pyccn.AOK_NEW) == 0:
+#			return pyccn.RESULT_OK
 
 		try:
 			co = self.queue.get_element(info.Interest, timeout=0.2)
@@ -230,25 +250,25 @@ class FlowController(Closure.Closure):
 		if not co:
 			print "Interest not queued, remembering..."
 			self.unmatched_interests.add(info.Interest)
-			return Closure.RESULT_INTEREST_CONSUMED
+			return pyccn.RESULT_INTEREST_CONSUMED
 
 		print "serving %s" % co.name
 		self.handle.put(co)
 		self.queue.task_done()
 
-		return Closure.RESULT_INTEREST_CONSUMED
+		return pyccn.RESULT_INTEREST_CONSUMED
 
-class VersionedPull(Closure.Closure):
+class VersionedPull(pyccn.Closure):
 	def __init__(self, base_name, callback, handle=None, version=None, latest=True):
 		if not handle:
-			handle = CCN.CCN()
+			handle = pyccn.CCN()
 
 		# some constants
 		self.version_marker = '\xfd'
 		self.first_version_marker = self.version_marker
 		self.last_version_marker = '\xfe\x00\x00\x00\x00\x00\x00'
 
-		self.base_name = Name.Name(base_name)
+		self.base_name = pyccn.Name(base_name)
 		self.callback = callback
 		self.handle = handle
 		self.latest_version = version if version else self.first_version_marker
@@ -259,14 +279,14 @@ class VersionedPull(Closure.Closure):
 			latest=True
 			self.start_with_latest = False
 
-		excl = Interest.ExclusionFilter()
+		excl = pyccn.ExclusionFilter()
 		excl.add_any()
-		excl.add_name(Name.Name([self.latest_version]))
+		excl.add_name(pyccn.Name([self.latest_version]))
 		# expected result should be between those two names
-		excl.add_name(Name.Name([self.last_version_marker]))
+		excl.add_name(pyccn.Name([self.last_version_marker]))
 		excl.add_any()
 
-		interest = Interest.Interest(name=self.base_name, exclude=excl, \
+		interest = pyccn.Interest(name=self.base_name, exclude=excl, \
 			minSuffixComponents=3, maxSuffixComponents=3)
 		interest.childSelector = 1 if latest else 0
 		return interest
@@ -286,33 +306,32 @@ class VersionedPull(Closure.Closure):
 		self.handle.expressInterest(interest.name, self, interest)
 
 	def upcall(self, kind, info):
-		if kind == Closure.UPCALL_FINAL:
-			return Closure.RESULT_OK
+		if kind == pyccn.UPCALL_FINAL:
+			return pyccn.RESULT_OK
 
 		# update version
-		if kind in [Closure.UPCALL_CONTENT, Closure.UPCALL_CONTENT_UNVERIFIED]:
+		if kind in [pyccn.UPCALL_CONTENT, pyccn.UPCALL_CONTENT_UNVERIFIED]:
 			base_len = len(self.base_name)
 			self.latest_version = info.ContentObject.name[base_len]
 
 		self.callback(kind, info)
 
-		return Closure.RESULT_OK
+		return pyccn.RESULT_OK
 
 if __name__ == '__main__':
 	def make_content(name):
 		global key
 
-		co = ContentObject.ContentObject()
-		co.name = Name.Name(name)
+		co = pyccn.ContentObject()
+		co.name = pyccn.Name(name)
 		co.signedInfo.publisherPublicKeyDigest = key.publicKeyID
 		co.sign(key)
 		return co
 
 	def make_interest(name):
-		return Interest.Interest(name=Name.Name(name))
+		return Interest.Interest(name=pyccn.Name(name))
 
-	h = CCN.CCN()
-	key = h.getDefaultKey()
+	key = pyccn.CCN.getDefaultKey()
 
 	buf = CCNBuffer()
 	co0 = make_content('/a/0')

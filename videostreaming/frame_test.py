@@ -8,6 +8,7 @@ import gobject
 gobject.threads_init()
 
 import traceback
+import pytimecode
 
 class MySink(gst.Element):
 	_sinkpadtemplate = gst.PadTemplate ("sinkpadtemplate",
@@ -15,6 +16,7 @@ class MySink(gst.Element):
 		gst.PAD_ALWAYS,
 		gst.caps_new_any())
 	_counter = 0
+	_tc = pytimecode.PyTimeCode('29.97', frames=0, drop_frame=False)
 
 	def __init__(self):
 		gst.Element.__init__(self)
@@ -39,22 +41,34 @@ class MySink(gst.Element):
 
 	def chainfunc(self, pad, buffer):
 		try:
-			self._counter += 1
-			self.info("%s timestamp(buffer):%d" % (pad, buffer.timestamp))
+#			self.info("%s timestamp(buffer):%d" % (pad, buffer.timestamp))
 
 #			self.info("offset %d, offset_end %d" % (buffer.offset, buffer.offset_end))
 #			self.info("duration %d" % buffer.duration)
-#			self.info("flags %s" % buffer.flags)
+			self.info("flags %s KeyFrame: %s" % (buffer.flags, not buffer.flag_is_set(gst.BUFFER_FLAG_DELTA_UNIT)))
 #			self.info("caps %s" % buffer.caps)
+
+			if buffer.flags != 256 and buffer.flags != 0:
+				return gst.FLOW_ERROR
 
 			framerate = buffer.caps[0]['framerate']
 
-#			self.info("framerate: %f" % framerate)
-			self.info("frame = %f" % (buffer.timestamp * float(framerate) / gst.SECOND))
+			self.info("timestamp: %d" % buffer.timestamp)
+#			self.info("offset %d, offset_end %d" % (buffer.offset, buffer.offset_end))
+			self.info("framerate: %s %f" % (framerate, framerate))
+			frame_frac = (buffer.timestamp * float(framerate) /  gst.SECOND)
+			frame = round(frame_frac)
+			self.info("frame = %f %d" % (frame_frac, frame))
+			self.info("counter = %d" % self._counter)
+			self.info("timecode = %s" % self._tc)
+			assert self._counter == frame
 			#print dir(buffer)
 
 #			if self._counter > 10:
 #				return gst.FLOW_ERROR
+
+			self._tc.next()
+			self._counter += 1
 
 			return gst.FLOW_OK
 		except:
@@ -68,16 +82,26 @@ class MySink(gst.Element):
 gobject.type_register(MySink)
 
 if __name__ == '__main__':
-	src = gst.element_factory_make("videotestsrc")
+	src = gst.element_factory_make("v4l2src")
+	src.set_property('do-timestamp', True)
+
+	scale = gst.element_factory_make("videoscale")
+	scale.set_property('add_borders', True)
+
 	encoder = gst.element_factory_make("ffenc_h263")
+
 #	sink = gst.element_factory_make("fakesink")
 	sink = MySink()
 
 	pipeline = gst.Pipeline()
-	pipeline.add(src, encoder, sink)
+	pipeline.add(src, scale, encoder, sink)
 
-	caps = gst.caps_from_string("video/x-raw-yuv,width=352,height=288")
-	src.link_filtered(encoder, caps)
+	src_caps = gst.caps_from_string("video/x-raw-yuv,width=704,height=480")
+	src.link_filtered(scale, src_caps)
+
+	scale_caps = gst.caps_from_string("video/x-raw-yuv,width=704,height=576")
+	scale.link_filtered(encoder, scale_caps)
+
 	encoder.link(sink)
 
 	loop = gobject.MainLoop()

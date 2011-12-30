@@ -5,11 +5,7 @@ pygst.require("0.10")
 import gst
 import gobject
 
-import traceback, threading
-import Queue
-from pyccn import *
-
-gobject.threads_init()
+import traceback
 
 class CCNSrc(gst.BaseSrc):
 	__gtype_name__ = 'CCNSrc'
@@ -28,6 +24,7 @@ class CCNSrc(gst.BaseSrc):
 	def __init__(self, name):
 		self.__gobject_init__()
 		self.set_name(name)
+		self.set_format(gst.FORMAT_TIME)
 
 #		gst.info("Creating CCN Src")
 #		self.srcpad = gst.Pad(self._srcpadtemplate, "src")
@@ -42,19 +39,60 @@ class CCNSrc(gst.BaseSrc):
 
 	def set_property(self, name, value):
 		if name == 'location':
-			self.uri = Name.Name(value)
+			self.uri = pyccn.Name(value)
 
 	def set_receiver(self, receiver):
 		self._receiver = receiver
+
+	def do_start(self):
+		print "Called start"
+		return True
+
+	def do_stop(self):
+		print "Called stop"
+		self._receiver.stop()
+		return True
+
+	def do_is_seekable(self):
+		print "Called seekable"
+		return True
+
+	def do_check_get_range(self):
+		print "Called do_check"
+		return True
+
+#	def do_event(self, event):
+#		print "Got event %s" % event
+#		if event.type == gst.EVENT_QOS:
+#			print "QOS: proportion %f, diff: %d timestamp: %d" % event.parse_qos()
+#		return True
 
 	def do_create(self, offset, size):
 		if not self._receiver:
 			raise AssertionError("_receiver not set")
 
-		print "offset: %d, size: %d" % (offset, size)
+		#print "offset: %d, size: %d" % (offset, size)
 		buffer = self._receiver.queue.get()
-		self._receiver.queue.task_done()
-		return gst.FLOW_OK, buffer
+		try:
+			return gst.FLOW_OK, buffer
+		finally:
+			self._receiver.queue.task_done()
+
+	def do_do_seek(self, segment):
+		if segment.start == 0:
+			return True
+		print "Seeking: %s" % segment
+		print "abs_rate: %s" % segment.abs_rate
+		print "accum: %s" % segment.accum
+		print "duration: %s" % segment.duration
+		print "flags: %s" % segment.flags
+		print "format: %s" % segment.format
+		print "last_stop: %s" % segment.last_stop
+		print "rate: %s" % segment.rate
+		print "start: %s" % segment.start
+		print "stop: %s" % segment.stop
+		print "time: %s" % segment.time
+		return False
 
 	def queryfunc(self, pad, query):
 		try:
@@ -69,114 +107,7 @@ class CCNSrc(gst.BaseSrc):
 		self.info("%s event:%r" % (pad, event.type))
 		return True
 
-class Receiver(Closure.Closure):
-	queue = Queue.Queue(20)
-
-	def __init__(self, uri):
-		self._handle = CCN.CCN()
-		self._uri = Name.Name(uri)
-		self._segment = 0
-
-	def start(self):
-		self._receiver_thread = threading.Thread(target=self.run)
-		self._running = True
-		self._receiver_thread.start()
-		self.next_interest()
-
-	def stop(self):
-		self._running = False
-		self._handle.setTimeout(0)
-		self._receiver_thread.join()
-
-	def run(self):
-		print "Running ccn loop"
-		self._handle.run(-1)
-		print "Finished running ccn loop"
-
-	def next_interest(self):
-		name = Name.Name(self._uri)
-		name.appendSegment(self._segment)
-		self._segment += 1
-
-		interest = Interest.Interest(name=name)
-		print "Issuing an interest for: %s" % name
-		self._handle.expressInterest(name, self, interest)
-
-	def upcall(self, kind, info):
-		if kind == Closure.UPCALL_FINAL:
-			return Closure.RESULT_OK
-
-		if kind == Closure.UPCALL_CONTENT:
-			content = gst.Buffer(info.ContentObject.content)
-			self.queue.put(content)
-			self.next_interest()
-			return Closure.RESULT_OK
-
-		if kind == Closure.UPCALL_INTEREST_TIMED_OUT:
-			print "timeout - reexpressing"
-			return Closure.RESULT_REEXPRESS
-
-		print "kind: %d" % kind
-
-		return Closure.RESULT_ERR
 
 #gobject.type_register(CCNSrc)
 gst.element_register(CCNSrc, 'ccnsrc')
 
-if __name__ == '__main__':
-	#def on_eos(bus, msg):
-	#	mainloop.quit()
-	def on_dynamic_pad(dbin, pad):
-		global decoder
-		print "Linking dynamically!"
-		pad.link(decoder.get_pad("sink"))
-
-	def bus_call(bus, message, loop):
-		t = message.type
-		if t == gst.MESSAGE_EOS:
-			print("End-of-stream")
-			loop.quit()
-		elif t == gst.MESSAGE_ERROR:
-			err, debug = message.parse_error()
-			print("Error: %s: %s" % (err, debug))
-			loop.quit()
-		return True
-
-#	src = gst.element_factory_make('filesrc')
-#	src.set_property('location', 'test.bin')
-
-	receiver = Receiver('/videostream')
-	src = CCNSrc('source')
-	src.set_receiver(receiver)
-	receiver.start()
-
-#	demuxer = gst.element_factory_make('mpegtsdemux')
-	decoder = gst.element_factory_make('ffdec_h263')
-	sink = gst.element_factory_make('xvimagesink')
-
-	pipeline = gst.Pipeline()
-	pipeline.add(src, decoder, sink)
-
-	caps = gst.caps_from_string('video/x-h263,width=352,height=288,framerate=30/1')
-	src.link_filtered(decoder, caps)
-#	demuxer.connect("pad-added", on_dynamic_pad)
-	decoder.link(sink)
-
-	#gst.element_link_many(src, demuxer, decoder, sink)
-
-	loop = gobject.MainLoop()
-	bus = pipeline.get_bus()
-	#bus.add_signal_watch()
-	#bus.connect('message::eos', on_eos)
-	bus.add_watch(bus_call, loop)
-
-	pipeline.set_state(gst.STATE_PLAYING)
-
-	try:
-		loop.run()
-	except KeyboardInterrupt:
-		print "Ctrl+C pressed, exitting"
-		pass
-
-	pipeline.set_state(gst.STATE_NULL)
-	pipeline.get_state(gst.CLOCK_TIME_NONE)
