@@ -22,6 +22,17 @@ class CCNTransmitter():
 		self._signed_info = pyccn.SignedInfo(self._key.publicKeyID, pyccn.KeyLocator(self._key))
 		self._signed_info_frames = pyccn.SignedInfo(self._key.publicKeyID, pyccn.KeyLocator(self._key))
 
+	def publish_stream_info(self, pad, args):
+		caps = pad.get_negotiated_caps()
+
+		name = self._basename.append("stream_info")
+
+		print "Publishing %s under %s" % (caps, name)
+		co = pyccn.ContentObject(name, caps, self._signed_info)
+		co.sign(self._key)
+
+		self._flow_controller.put(co)
+
 	def start(self):
 		self._sender_thread = threading.Thread(target=self.sender)
 		self._running = True
@@ -30,6 +41,15 @@ class CCNTransmitter():
 	def stop(self):
 		self._running = False
 		self._sender_thread.join()
+
+	def prepareFramePacket(self, frame, segment):
+		name = self._name_frames.append(frame)
+		segment_name = self._name_segments.appendSegment(segment)
+
+		co = pyccn.ContentObject(name, str(segment_name), self._signed_info_frames)
+		co.sign(self._key)
+
+		return co
 
 	def preparePacket(self, segment, left, data):
 		name = self._name_segments.appendSegment(segment)
@@ -54,6 +74,10 @@ class CCNTransmitter():
 				return
 
 			frame, buffer = entry
+
+			if not buffer.flag_is_set(gst.BUFFER_FLAG_DELTA_UNIT):
+				packet = self.prepareFramePacket(frame, self._segment)
+				self._flow_controller.put(packet)
 
 			chunk_size = self._chunk_size - utils.packet_hdr_len
 			nochunks = int(math.ceil(buffer.size / float(chunk_size)))
@@ -105,7 +129,7 @@ if __name__ == '__main__':
 		return True
 
 	src = gst.element_factory_make("v4l2src")
-	src.set_property('do-timestamp', True)
+#	src.set_property('do-timestamp', True)
 
 	scale = gst.element_factory_make("videoscale")
 	scale.set_property('add_borders', True)
@@ -115,11 +139,13 @@ if __name__ == '__main__':
 #	overlay.set_property('halignment', 'right')
 #	overlay.set_property('valignment', 'bottom')
 
-	encoder = gst.element_factory_make("ffenc_h263")
+	encoder = gst.element_factory_make("x264enc")
+	encoder.set_property('bitrate', 256)
+	encoder.set_property('byte-stream', True)
 
 	sink = CCNSink()
-	encoder.get_pad("sink").connect("notify::caps", sink.retrieve_framerate)
 	transmitter = CCNTransmitter('/videostream', sink)
+	encoder.get_pad("src").connect("notify::caps", transmitter.publish_stream_info)
 
 	pipeline = gst.Pipeline()
 	pipeline.add(src, scale, overlay, encoder, sink)
