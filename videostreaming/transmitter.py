@@ -44,9 +44,8 @@ class CCNTransmitter():
 
 	def prepareFramePacket(self, frame, segment):
 		name = self._name_frames.append(frame)
-		segment_name = self._name_segments.appendSegment(segment)
 
-		co = pyccn.ContentObject(name, str(segment_name), self._signed_info_frames)
+		co = pyccn.ContentObject(name, segment, self._signed_info_frames)
 		co.sign(self._key)
 
 		return co

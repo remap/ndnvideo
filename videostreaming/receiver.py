@@ -3,7 +3,7 @@
 import pyccn
 import threading, Queue, sys
 
-import utils
+import utils, pytimecode
 
 class Receiver(pyccn.Closure):
 	queue = Queue.Queue(20)
@@ -15,6 +15,7 @@ class Receiver(pyccn.Closure):
 		self._name_segments = self._uri.append('segments')
 		self._name_frames = self._uri.append('frames')
 		self._segment = 0
+		self._seek_segment = None
 
 	def fetch_stream_info(self):
 		name = self._uri.append('stream_info')
@@ -30,7 +31,26 @@ class Receiver(pyccn.Closure):
 
 		return self.caps
 
-#	def fetch_seek_query(self, 
+	def fetch_seek_query(self, tc):
+		interest = pyccn.Interest(childSelector=1)
+		interest.exclude = pyccn.ExclusionFilter()
+
+		exc_tc = tc + 1
+		interest.exclude.add_name(pyccn.Name([exc_tc.make_timecode()]))
+		interest.exclude.add_any()
+
+		co = self._handle.get(self._name_frames, interest)
+		if not co:
+			raise Exception("Some bullshit exception")
+
+		tc = pytimecode.PyTimeCode(exc_tc.framerate, start_timecode=co.name[-1])
+
+		return tc, int(co.content)
+
+	def seek(self, tc):
+		rtc, segment = self.fetch_seek_query(tc)
+
+		self._seek_segment = segment
 
 	def start(self):
 		self._receiver_thread = threading.Thread(target=self.run)
@@ -49,6 +69,10 @@ class Receiver(pyccn.Closure):
 		print "Finished running ccn loop"
 
 	def next_interest(self):
+		if type(self._seek_segment) is int:
+			self._segment = self._seek_segment
+			self._seek_segment = True
+
 		name = self._name_segments.appendSegment(self._segment)
 		self._segment += 1
 
@@ -119,7 +143,6 @@ if __name__ == '__main__':
 	src = CCNSrc('source')
 	src.set_receiver(receiver)
 
-#	demuxer = gst.element_factory_make('mpegtsdemux')
 	decoder = gst.element_factory_make('ffdec_h264')
 	decoder.set_property('max-threads', 3)
 
@@ -130,11 +153,7 @@ if __name__ == '__main__':
 
 	caps = receiver.fetch_stream_info()
 
-	#caps = gst.caps_from_string('video/x-h264,width=352,height=288,framerate=30000/1001')
-	#caps = gst.caps_from_string('video/x-h264, width=(int)704, height=(int)576, framerate=(fraction)30000/1001, pixel-aspect-ratio=(fraction)6/5, codec_data=(buffer)014d401fffe1001c674d401feca0580937fe000c000a20000003002ee6b28001e30632c001000468ebecb2, stream-format=(string)avc, alignment=(string)au')
-	#caps = gst.caps_from_string('video/x-h264, width=(int)704, height=(int)576, framerate=(fraction)30000/1001, pixel-aspect-ratio=(fraction)6/5, stream-format=(string)byte-stream, alignment=(string)au')
 	src.link_filtered(decoder, caps)
-#	demuxer.connect("pad-added", on_dynamic_pad)
 	decoder.link(sink)
 
 	receiver.start()
@@ -147,7 +166,23 @@ if __name__ == '__main__':
 	#bus.connect('message::eos', on_eos)
 	bus.add_watch(bus_call, loop)
 
+#	pipeline.set_state(gst.STATE_PAUSED)
+
+#	tc = pytimecode.PyTimeCode("29.97", start_timecode="00:00:07:00")
+#	receiver.seek(tc)
+
 	pipeline.set_state(gst.STATE_PLAYING)
+	print "Entering loop"
+
+	event = gst.event_new_seek(1.0, gst.FORMAT_TIME, gst.SEEK_FLAG_FLUSH | gst.SEEK_FLAG_ACCURATE,
+		gst.SEEK_TYPE_SET, 10 * gst.SECOND, gst.SEEK_TYPE_NONE, 0)
+	res = pipeline.send_event(event)
+
+	if res:
+		print "setting new time to 0"
+		pipeline.set_start_time(0L)
+	else:
+		print "seek failed!"
 
 	try:
 		loop.run()

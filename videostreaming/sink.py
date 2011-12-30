@@ -82,6 +82,7 @@ class CCNSink(gst.Element):
 			#structure = caps.get_structure(0)
 			#self.info("name: %s" % structure.get_name())
 
+			print "offset: %d offset_end: %d" % (buffer.offset, buffer.offset_end)
 			self.queue.put((self._tc.make_timecode(), buffer))
 
 			self._tc.next()

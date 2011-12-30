@@ -24,18 +24,7 @@ class CCNSrc(gst.BaseSrc):
 	def __init__(self, name):
 		self.__gobject_init__()
 		self.set_name(name)
-		self.set_format(gst.FORMAT_TIME)
-
-#		gst.info("Creating CCN Src")
-#		self.srcpad = gst.Pad(self._srcpadtemplate, "src")
-#
-#		self.srcpad.set_event_function(self.eventfunc)
-#		self.srcpad.set_query_function(self.queryfunc)
-#		self.srcpad.set_getcaps_function(gst.Pad.proxy_getcaps)
-#		self.srcpad.set_setcaps_function(gst.Pad.proxy_setcaps)
-#
-#		gst.info("Adding srcpad to self")
-#		self.add_pad(self.srcpad)
+		#self.set_format(gst.FORMAT_TIME)
 
 	def set_property(self, name, value):
 		if name == 'location':
@@ -61,17 +50,19 @@ class CCNSrc(gst.BaseSrc):
 		print "Called do_check"
 		return True
 
-#	def do_event(self, event):
-#		print "Got event %s" % event
-#		if event.type == gst.EVENT_QOS:
-#			print "QOS: proportion %f, diff: %d timestamp: %d" % event.parse_qos()
-#		return True
+
+	def do_event(self, event):
+		if event.type == gst.EVENT_QOS:
+			return False
+			print "QOS: proportion %f, diff: %d timestamp: %d" % event.parse_qos()
+		print "Got event %s" % event
+		return True
 
 	def do_create(self, offset, size):
 		if not self._receiver:
 			raise AssertionError("_receiver not set")
 
-		#print "offset: %d, size: %d" % (offset, size)
+		print "offset: %d, size: %d" % (offset, size)
 		buffer = self._receiver.queue.get()
 		try:
 			return gst.FLOW_OK, buffer
@@ -79,9 +70,9 @@ class CCNSrc(gst.BaseSrc):
 			self._receiver.queue.task_done()
 
 	def do_do_seek(self, segment):
+		print "Seeking: %s" % segment
 		if segment.start == 0:
 			return True
-		print "Seeking: %s" % segment
 		print "abs_rate: %s" % segment.abs_rate
 		print "accum: %s" % segment.accum
 		print "duration: %s" % segment.duration
@@ -93,6 +84,10 @@ class CCNSrc(gst.BaseSrc):
 		print "stop: %s" % segment.stop
 		print "time: %s" % segment.time
 		return False
+
+	def do_prepare_seek_segment(self, seek, segment):
+		print "Called, Prepare seek segment"
+		return True
 
 	def queryfunc(self, pad, query):
 		try:
