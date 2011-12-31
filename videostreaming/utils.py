@@ -238,7 +238,7 @@ class FlowController(pyccn.Closure):
 
 		co = self.queue.put(co)
 		if co:
-			print "Overflow; pushing: %s" % co.name
+			#print "Overflow; pushing: %s" % co.name
 			self.handle.put(co)
 
 	def upcall(self, kind, info):

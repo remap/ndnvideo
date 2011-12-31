@@ -4,8 +4,10 @@ import Queue, struct, sys, threading, math
 import traceback
 import pyccn
 
+import utils
+
 class CCNTransmitter():
-	_chunk_size = 4000
+	_chunk_size = 4096
 	_segment = 0
 	_running = False
 
@@ -111,7 +113,6 @@ if __name__ == '__main__':
 
 	import time
 
-	import utils
 	from sink import CCNSink
 
 	gobject.threads_init()

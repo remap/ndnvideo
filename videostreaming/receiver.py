@@ -1,12 +1,15 @@
 #! /usr/bin/env python
 
-import pyccn
-import threading, Queue, sys
-import math
+import pygst
+pygst.require("0.10")
+import gst
+import gobject
+
+import pyccn, threading, Queue, sys
 
 import utils, pytimecode
 
-class Receiver(pyccn.Closure):
+class CCNReceiver(pyccn.Closure):
 	queue = Queue.Queue(2)
 	caps = None
 	frame_rate = None
@@ -126,10 +129,6 @@ class Receiver(pyccn.Closure):
 		return pyccn.RESULT_ERR
 
 if __name__ == '__main__':
-	import pygst
-	pygst.require("0.10")
-	import gst
-	import gobject
 
 	gobject.threads_init()
 
@@ -137,10 +136,6 @@ if __name__ == '__main__':
 
 	#def on_eos(bus, msg):
 	#	mainloop.quit()
-	def on_dynamic_pad(dbin, pad):
-		global decoder
-		print "Linking dynamically!"
-		pad.link(decoder.get_pad("sink"))
 
 	def bus_call(bus, message, loop):
 		t = message.type
@@ -156,7 +151,9 @@ if __name__ == '__main__':
 #	src = gst.element_factory_make('filesrc')
 #	src.set_property('location', 'test.bin')
 
-	receiver = Receiver('/videostream')
+	receiver = CCNReceiver('/videostream')
+	caps = receiver.fetch_stream_info()
+
 	src = CCNSrc('source')
 	src.set_receiver(receiver)
 
@@ -168,12 +165,9 @@ if __name__ == '__main__':
 	pipeline = gst.Pipeline()
 	pipeline.add(src, decoder, sink)
 
-	caps = receiver.fetch_stream_info()
 
 	src.link_filtered(decoder, caps)
 	decoder.link(sink)
-
-#	receiver.start()
 
 	#gst.element_link_many(src, demuxer, decoder, sink)
 

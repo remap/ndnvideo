@@ -101,29 +101,14 @@ class CCNSrc(gst.BaseSrc):
 			self._receiver.queue.task_done()
 
 	def do_do_seek(self, segment):
-#		print "Seeking: %s" % segment
-##		if segment.start == 0:
-##			return True
-#		print "abs_rate: %s" % segment.abs_rate
-#		print "accum: %s" % segment.accum
-#		print "duration: %s" % segment.duration
-#		print "flags: %s" % segment.flags
-#		print "format: %s" % segment.format
-#		print "last_stop: %s" % segment.last_stop
-#		print "rate: %s" % segment.rate
-#		print "start: %s" % segment.start
-#		print "stop: %s" % segment.stop
-#		print "time: %s" % segment.time
-
 		pos = self._receiver.seek(segment.time)
-
 		return True
 
-	def do_prepare_seek_segment(self, seek, segment):
-		print "Called, Prepare seek segment %s %s" % (seek, segment)
-		return True
-		#print "Stream time: %d" % segment.to_stream_time(gst.
-		return gst.BaseSrc.do_prepare_seek_segment(self, seek, segment)
+#	def do_prepare_seek_segment(self, seek, segment):
+#		print "Called, Prepare seek segment %s %s" % (seek, segment)
+#		return True
+#		#print "Stream time: %d" % segment.to_stream_time(gst.
+#		return gst.BaseSrc.do_prepare_seek_segment(self, seek, segment)
 
 #	def queryfunc(self, pad, query):
 #		try:

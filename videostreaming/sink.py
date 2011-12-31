@@ -7,7 +7,9 @@ import gobject
 
 from gst.extend.utils import gst_dump
 import Queue, traceback
+
 import pytimecode
+import utils
 
 class CCNSink(gst.Element):
 	_sinkpadtemplate = gst.PadTemplate("sinkpadtemplate",
@@ -27,7 +29,6 @@ class CCNSink(gst.Element):
 		gst.info("Adding sinkpad to self")
 		self.add_pad(self.sinkpad)
 
-		#self.sinkpad.connect("notify::caps", self._notify_caps)
 		self.sinkpad.set_chain_function(self.chainfunc)
 		self.sinkpad.set_event_function(self.eventfunc)
 
@@ -53,16 +54,9 @@ class CCNSink(gst.Element):
 
 	def _set_tc(self, pad):
 		caps = pad.get_negotiated_caps()[0]
-		framerate = caps['framerate']
 
-		if framerate.num == 30 and framerate.denom == 1:
-			fr = "30"
-		elif framerate.num == 30000 and framerate.denom == 1001:
-			fr = "29.97"
-		elif framerate.num == 25 and framerate.denom == 1:
-			fr = "25"
-		else:
-			raise Exception("Unsupported framerate: %s" % framerate)
+		framerate = caps['framerate']
+		fr = utils.framerate2str(framerate)
 
 		self._tc = pytimecode.PyTimeCode(fr, frames=0)
 
@@ -72,17 +66,7 @@ class CCNSink(gst.Element):
 				print "setting tc"
 				self._set_tc(pad)
 
-			#self.info("name: %s" % pad.get_name())
-			#parent = pad.get_parent_element()
-			#self.info("parent %r" % parent)
-			#self.info("name: %s" % parent.get_name())
-			#caps = pad.get_caps()
-			#size = caps.get_size()
-			#self.info("size: %d" % size)
-			#structure = caps.get_structure(0)
-			#self.info("name: %s" % structure.get_name())
-
-			print "offset: %d offset_end: %d" % (buffer.offset, buffer.offset_end)
+			#print "offset: %d offset_end: %d" % (buffer.offset, buffer.offset_end)
 			self.queue.put((self._tc.make_timecode(), buffer))
 
 			self._tc.next()
