@@ -31,6 +31,18 @@ def packet2buffer(packet):
 
 	return left, buf
 
+def framerate2str(framerate):
+	if framerate.num == 30 and framerate.denom == 1:
+		fr_str = "30"
+	elif framerate.num == 30000 and framerate.denom == 1001:
+		fr_str = "29.97"
+	elif framerate.num == 25 and framerate.denom == 1:
+		fr_str = "25"
+	else:
+		raise ValueError("Unsupported framerate: %s" % framerate)
+
+	return fr_str
+
 class RingBuffer:
 	def __init__(self, size):
 		self.data = [None for i in xrange(size)]

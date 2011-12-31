@@ -127,15 +127,15 @@ if __name__ == '__main__':
 			loop.quit()
 		return True
 
-	src = gst.element_factory_make("v4l2src")
-#	src.set_property('do-timestamp', True)
+	src = gst.element_factory_make("videotestsrc")
+#	src = gst.element_factory_make("v4l2src")
 
 	scale = gst.element_factory_make("videoscale")
 	scale.set_property('add_borders', True)
 
 	overlay = gst.element_factory_make("timeoverlay")
 	overlay.set_property('shaded-background', True)
-#	overlay.set_property('halignment', 'right')
+	overlay.set_property('halignment', 'right')
 #	overlay.set_property('valignment', 'bottom')
 
 	encoder = gst.element_factory_make("x264enc")

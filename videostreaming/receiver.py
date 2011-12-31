@@ -2,12 +2,14 @@
 
 import pyccn
 import threading, Queue, sys
+import math
 
 import utils, pytimecode
 
 class Receiver(pyccn.Closure):
-	queue = Queue.Queue(20)
+	queue = Queue.Queue(2)
 	caps = None
+	frame_rate = None
 
 	def __init__(self, uri):
 		self._handle = pyccn.CCN()
@@ -27,7 +29,11 @@ class Receiver(pyccn.Closure):
 			print "Unable to fetch %s" % name
 			sys.exit(10)
 
-		self.caps = co.content
+		self.caps = gst.caps_from_string(co.content)
+		print "Stream caps: %s" % self.caps
+
+		framerate = self.caps[0]['framerate']
+		self.frame_rate = utils.framerate2str(framerate)
 
 		return self.caps
 
@@ -47,8 +53,12 @@ class Receiver(pyccn.Closure):
 
 		return tc, int(co.content)
 
-	def seek(self, tc):
+	def seek(self, ns):
+		tc = pytimecode.PyTimeCode(self.frame_rate, start_seconds=ns/float(gst.SECOND))
+
+		print "Requesting tc: %s" % tc
 		rtc, segment = self.fetch_seek_query(tc)
+		print "Seeking to segment %d" % segment
 
 		self._seek_segment = segment
 
@@ -70,13 +80,14 @@ class Receiver(pyccn.Closure):
 
 	def next_interest(self):
 		if type(self._seek_segment) is int:
+			print "Switching to next segment"
+			self.segbuf = []
 			self._segment = self._seek_segment
 			self._seek_segment = True
 
 		name = self._name_segments.appendSegment(self._segment)
 		self._segment += 1
 
-		#interest = Interest.Interest(name=name)
 		#print "Issuing an interest for: %s" % name
 		self._handle.expressInterest(name, self)
 
@@ -88,6 +99,8 @@ class Receiver(pyccn.Closure):
 			if not hasattr(self, 'segbuf'):
 				self.segbuf = []
 
+			print "Received %s" % info.ContentObject.name
+
 			last, content = utils.packet2buffer(info.ContentObject.content)
 			self.segbuf.append(content)
 			if last == 0:
@@ -95,6 +108,10 @@ class Receiver(pyccn.Closure):
 				for e in self.segbuf[1:]:
 					res = res.merge(e)
 				self.segbuf = []
+				if self._seek_segment == True:
+					print "Marking as discontinued"
+					res.flag_set(gst.BUFFER_FLAG_DISCONT)
+					self._seek_segment = None
 				self.queue.put(res)
 
 			self.next_interest()
@@ -156,7 +173,7 @@ if __name__ == '__main__':
 	src.link_filtered(decoder, caps)
 	decoder.link(sink)
 
-	receiver.start()
+#	receiver.start()
 
 	#gst.element_link_many(src, demuxer, decoder, sink)
 
@@ -166,23 +183,11 @@ if __name__ == '__main__':
 	#bus.connect('message::eos', on_eos)
 	bus.add_watch(bus_call, loop)
 
-#	pipeline.set_state(gst.STATE_PAUSED)
-
-#	tc = pytimecode.PyTimeCode("29.97", start_timecode="00:00:07:00")
-#	receiver.seek(tc)
-
 	pipeline.set_state(gst.STATE_PLAYING)
 	print "Entering loop"
 
-	event = gst.event_new_seek(1.0, gst.FORMAT_TIME, gst.SEEK_FLAG_FLUSH | gst.SEEK_FLAG_ACCURATE,
-		gst.SEEK_TYPE_SET, 10 * gst.SECOND, gst.SEEK_TYPE_NONE, 0)
-	res = pipeline.send_event(event)
-
-	if res:
-		print "setting new time to 0"
-		pipeline.set_start_time(0L)
-	else:
-		print "seek failed!"
+	res = pipeline.seek_simple(gst.FORMAT_TIME, gst.SEEK_FLAG_FLUSH | gst.SEEK_FLAG_ACCURATE, 90 * gst.SECOND)
+	print "Seek result: %s" % res
 
 	try:
 		loop.run()
