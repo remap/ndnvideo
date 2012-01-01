@@ -39,7 +39,7 @@ class CCNSrc(gst.BaseSrc):
 		if location:
 			receiver = CCNReceiver(location)
 			self.set_receiver(receiver)
-		self.seek_in_progress = False
+		self.seek_in_progress = None
 
 	def do_set_property(self, property, value):
 		if property.name == 'location':
@@ -113,8 +113,8 @@ class CCNSrc(gst.BaseSrc):
 					return gst.FLOW_OK, gst.Buffer()
 
 				if buffer.flag_is_set(gst.BUFFER_FLAG_DISCONT):
-					self.seek_in_progress = False
-					event = gst.event_new_new_segment(False, 1.0, gst.FORMAT_TIME, buffer.timestamp, -1, buffer.timestamp)
+					event = gst.event_new_new_segment(False, 1.0, gst.FORMAT_TIME, self.seek_in_progress, -1, self.seek_in_progress)
+					self.seek_in_progress = None
 					r = self.get_static_pad("src").push_event(event)
 					#r = self.new_seamless_segment(buffer.timestamp, -1, buffer.timestamp)
 					print "New segment: %s" % r
@@ -128,7 +128,7 @@ class CCNSrc(gst.BaseSrc):
 
 	def do_do_seek(self, segment):
 		print "Asked to seek to %d" % segment.start
-		self.seek_in_progress = True
+		self.seek_in_progress = segment.start
 		pos = self._receiver.seek(segment.start)
 		return True
 
