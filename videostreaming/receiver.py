@@ -14,13 +14,16 @@ class CCNReceiver(pyccn.Closure):
 	caps = None
 	frame_rate = None
 
+	_cmd_q = Queue.Queue(2)
+	_running = False
+	_segment = 0
+	_seek_segment = None
+
 	def __init__(self, uri):
 		self._handle = pyccn.CCN()
 		self._uri = pyccn.Name(uri)
 		self._name_segments = self._uri.append('segments')
 		self._name_frames = self._uri.append('frames')
-		self._segment = 0
-		self._seek_segment = None
 
 	def fetch_stream_info(self):
 		name = self._uri.append('stream_info')
@@ -41,6 +44,7 @@ class CCNReceiver(pyccn.Closure):
 		return self.caps
 
 	def fetch_seek_query(self, tc):
+		print "Fetching segment number for %s" % tc
 		interest = pyccn.Interest(childSelector=1)
 		interest.exclude = pyccn.ExclusionFilter()
 
@@ -49,21 +53,51 @@ class CCNReceiver(pyccn.Closure):
 		interest.exclude.add_any()
 
 		co = self._handle.get(self._name_frames, interest)
+		#co = utils.safe_get(self._handle, self._name_frames, interest)
+		if not co:
+			raise Exception("Some bullshit exception")
+
+		tc = pytimecode.PyTimeCode(exc_tc.framerate, start_timecode=co.name[-1])
+		segment = int(co.content)
+		print "Got segment: %s" % segment
+
+		return tc, segment
+
+	def fetch_last_frame(self):
+		interest = pyccn.Interest(childSelector=1)
+
+		co = self._handle.get(self._name_frames, interest)
 		if not co:
 			raise Exception("Some bullshit exception")
 
 		tc = pytimecode.PyTimeCode(exc_tc.framerate, start_timecode=co.name[-1])
 
-		return tc, int(co.content)
+		return tc
+
+	def process_commands(self):
+		if self._cmd_q.empty():
+			return
+
+		try:
+			cmd = self._cmd_q.get_nowait()
+			if cmd[0] == 1:
+				tc, segment = self.fetch_seek_query(cmd[1])
+				print "Seeking to segment %d [%s]" % (segment, tc)
+				self._seek_segment = segment
+				self._cmd_q.task_done()
+
+				self.next_interest() # why this is necessary? Why I never get a callback?
+			else:
+				raise Exception, "Unknown command: %d" % cmd
+		except Queue.Empty:
+			return
 
 	def seek(self, ns):
 		tc = pytimecode.PyTimeCode(self.frame_rate, start_seconds=ns/float(gst.SECOND))
 
 		print "Requesting tc: %s" % tc
-		rtc, segment = self.fetch_seek_query(tc)
-		print "Seeking to segment %d" % segment
-
-		self._seek_segment = segment
+		self._cmd_q.put([1, tc])
+		print "Seek comand queued"
 
 	def start(self):
 		self._receiver_thread = threading.Thread(target=self.run)
@@ -78,7 +112,10 @@ class CCNReceiver(pyccn.Closure):
 
 	def run(self):
 		print "Running ccn loop"
-		self._handle.run(-1)
+		while self._running:
+			self._handle.run(100)
+			self.process_commands()
+
 		print "Finished running ccn loop"
 
 	def next_interest(self):
@@ -96,6 +133,7 @@ class CCNReceiver(pyccn.Closure):
 
 	def upcall(self, kind, info):
 		if kind == pyccn.UPCALL_FINAL:
+			self.next_interest()
 			return pyccn.RESULT_OK
 
 		elif kind == pyccn.UPCALL_CONTENT:
@@ -107,87 +145,58 @@ class CCNReceiver(pyccn.Closure):
 			last, content = utils.packet2buffer(info.ContentObject.content)
 			self.segbuf.append(content)
 			if last == 0:
+				#Merging, maybe I shouldn't do this :/
 				res = self.segbuf[0]
 				for e in self.segbuf[1:]:
 					res = res.merge(e)
 				self.segbuf = []
+
+				# Marking jump due to seeking
 				if self._seek_segment == True:
 					print "Marking as discontinued"
 					res.flag_set(gst.BUFFER_FLAG_DISCONT)
 					self._seek_segment = None
-				self.queue.put(res)
 
-			self.next_interest()
+				#print "before put"
+				self.queue.put(res)
+				#print "after put"
+
+			#self.next_interest()
 			return pyccn.RESULT_OK
 
 		elif kind == pyccn.UPCALL_INTEREST_TIMED_OUT:
 			print "timeout - reexpressing"
 			return pyccn.RESULT_REEXPRESS
 
-		print "kind: %d" % kind
+		print "Got unknown kind: %d" % kind
 
 		return pyccn.RESULT_ERR
 
 if __name__ == '__main__':
+	import time
 
-	gobject.threads_init()
+	def consumer(receiver):
+		while True:
+			data = receiver.queue.get()
+			time.sleep(.01)
 
-	from src import CCNSrc
-
-	#def on_eos(bus, msg):
-	#	mainloop.quit()
-
-	def bus_call(bus, message, loop):
-		t = message.type
-		if t == gst.MESSAGE_EOS:
-			print("End-of-stream")
-			loop.quit()
-		elif t == gst.MESSAGE_ERROR:
-			err, debug = message.parse_error()
-			print("Error: %s: %s" % (err, debug))
-			loop.quit()
-		return True
-
-#	src = gst.element_factory_make('filesrc')
-#	src.set_property('location', 'test.bin')
+	def do_seek(receiver, sec):
+		ns = int(sec * 1000 * 1000 * 1000)
+		receiver.seek(ns)
 
 	receiver = CCNReceiver('/videostream')
-	caps = receiver.fetch_stream_info()
+	receiver.fetch_stream_info()
 
-	src = CCNSrc('source')
-	src.set_receiver(receiver)
+	thread = threading.Thread(target=consumer, args=[receiver])
+	thread.start()
 
-	decoder = gst.element_factory_make('ffdec_h264')
-	decoder.set_property('max-threads', 3)
+	timer = threading.Timer(2, do_seek, args=[receiver, 30])
+	timer.start()
 
-	sink = gst.element_factory_make('xvimagesink')
+	timer = threading.Timer(5, do_seek, args=[receiver, 0])
+	timer.start()
 
-	pipeline = gst.Pipeline()
-	pipeline.add(src, decoder, sink)
+	timer = threading.Timer(6, do_seek, args=[receiver, 0])
+	timer.start()
 
-
-	src.link_filtered(decoder, caps)
-	decoder.link(sink)
-
-	#gst.element_link_many(src, demuxer, decoder, sink)
-
-	loop = gobject.MainLoop()
-	bus = pipeline.get_bus()
-	#bus.add_signal_watch()
-	#bus.connect('message::eos', on_eos)
-	bus.add_watch(bus_call, loop)
-
-	pipeline.set_state(gst.STATE_PLAYING)
-	print "Entering loop"
-
-	res = pipeline.seek_simple(gst.FORMAT_TIME, gst.SEEK_FLAG_FLUSH | gst.SEEK_FLAG_ACCURATE, 90 * gst.SECOND)
-	print "Seek result: %s" % res
-
-	try:
-		loop.run()
-	except KeyboardInterrupt:
-		print "Ctrl+C pressed, exitting"
-		pass
-
-	pipeline.set_state(gst.STATE_NULL)
-	pipeline.get_state(gst.CLOCK_TIME_NONE)
+	receiver.start()

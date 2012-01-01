@@ -9,6 +9,57 @@ import pyccn
 packet_hdr = "!IQQ"
 packet_hdr_len = struct.calcsize(packet_hdr)
 
+class GetResponse(pyccn.Closure):
+	def __init__(self, event):
+		self.event = event
+		self.kind = None
+		self.content_object = None
+
+	def upcall(self, kind, info):
+		self.event.acquire()
+
+		try:
+			print "got %d" % kind
+			if kind == pyccn.UPCALL_FINAL:
+				return pyccn.RESULT_OK
+
+			if kind == pyccn.UPCALL_CONTENT_UNVERIFIED:
+				return pyccn.RESULT_VERIFY
+
+			if not kind in [pyccn.UPCALL_CONTENT]: # needs also CONTENT_RAW
+				return pyccn.RESULT_ERR
+
+			self.kind = kind
+			self.content_object = info.ContentObject
+			self.event.notify()
+		finally:
+			self.event.release()
+
+		return pyccn.RESULT_OK
+
+	def get_response(self):
+		return self.content_object
+
+def safe_get(handle, name, template = None):
+	#event = threading.Event()
+	event = threading.Condition()
+
+	response = GetResponse(event);
+	event.acquire()
+	ret = handle.expressInterest(name, response, template)
+	print "waiting"
+	for thread in threading.enumerate():
+		print "%s - %s" % (thread.getName(), thread)
+
+	event.wait()
+
+	r = response.get_response()
+
+	event.release()
+	print "not waiting"
+
+	return r
+
 def packet(name, data, key):
 	co = pyccn.ContentObject()
 	co.name = pyccn.Name(name)

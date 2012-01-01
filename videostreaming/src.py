@@ -5,7 +5,10 @@ pygst.require("0.10")
 import gst
 import gobject
 
+import Queue
 import traceback
+
+from receiver import CCNReceiver
 
 class CCNSrc(gst.BaseSrc):
 	__gtype_name__ = 'CCNSrc'
@@ -19,16 +22,30 @@ class CCNSrc(gst.BaseSrc):
 			gst.caps_new_any()),
 		)
 
+	__gproperties__ = {
+		'location' : (gobject.TYPE_STRING,
+			'CCNx location',
+			'location of the stream in CCNx network',
+			'',
+			gobject.PARAM_READWRITE)
+	}
+
 	_receiver = None
 	_sinkpad = None
-	def __init__(self, name):
+	_caps = None
+	def __init__(self, location=None):
 		self.__gobject_init__()
-		self.set_name(name)
 		self.set_format(gst.FORMAT_TIME)
+		if location:
+			receiver = CCNReceiver(location)
+			self.set_receiver(receiver)
 
-	def set_property(self, name, value):
-		if name == 'location':
-			self.uri = pyccn.Name(value)
+	def do_set_property(self, property, value):
+		if property.name == 'location':
+			receiver = CCNReceiver(value)
+			self.set_receiver(receiver)
+		else:
+			raise AttributeError, 'unknown property %s' % property.name
 
 	def set_receiver(self, receiver):
 		self._receiver = receiver
@@ -48,6 +65,16 @@ class CCNSrc(gst.BaseSrc):
 		print "Requesting seek %s" % str(seek_args)
 		return False
 
+	def do_get_caps(self):
+		print "Called do_get_caps"
+		if not self._caps:
+			if self._receiver:
+				self._caps = self._receiver.fetch_stream_info()
+			else:
+				return None
+
+		return self._caps
+
 	def do_start(self):
 		print "Called start"
 		self._receiver.start()
@@ -60,64 +87,95 @@ class CCNSrc(gst.BaseSrc):
 
 	def do_get_size(self, size):
 		print "Called get_size"
+		raise Exception("aaaa!")
 		return False
 
 	def do_is_seekable(self):
-		print "Called seekable"
 		return True
 
 	def do_check_get_range(self):
-		print "Called check_get_range"
 		return False
 
-#	def do_event(self, event):
-#		if event.type in [gst.EVENT_NAVIGATION]:
-#			return gst.BaseSrc.do_event(self, event)
-#
-#		if event.type == gst.EVENT_QOS:
-#			return gst.BaseSrc.do_event(self, event)
-#			print "QOS: proportion %f, diff: %d timestamp: %d" % event.parse_qos()
-#		elif event.type == gst.EVENT_LATENCY:
-#			print "Latency %d" % event.parse_latency()
-#		elif event.type == gst.EVENT_SEEK:
-#			print "Event Seek: rate: %f format %s flags: %s start_type: %s start %d stop_type %s stop %d" % event.parse_seek()
-#			return gst.BaseSrc.do_event(self, event)
-#
-#		print "Got event %s" % event.type
-#		return gst.BaseSrc.do_event(self, event)
-
 	def do_create(self, offset, size):
-		if not self._receiver:
-			raise AssertionError("_receiver not set")
-
-		#print "Offset: %d, Size: %d" % (offset, size)
-		buffer = self._receiver.queue.get()
-		if buffer.flag_is_set(gst.BUFFER_FLAG_DISCONT):
-			r = self.new_seamless_segment(buffer.timestamp, -1, buffer.timestamp)
-			print "Seamless segment: %s" % r
 		try:
-			return gst.FLOW_OK, buffer
-		finally:
-			self._receiver.queue.task_done()
+			if not self._receiver:
+				raise AssertionError("_receiver not set")
+
+			#print "Offset: %d, Size: %d" % (offset, size)
+			try:
+				buffer = self._receiver.queue.get(True, 0.5)
+			except Queue.Empty:
+				return gst.FLOW_OK, gst.Buffer()
+
+			try:
+				if buffer.flag_is_set(gst.BUFFER_FLAG_DISCONT):
+					event = gst.event_new_new_segment(True, 1.0, gst.FORMAT_TIME, buffer.timestamp, -1, buffer.timestamp)
+					r = self.get_static_pad("src").push_event(event)
+					#r = self.new_seamless_segment(buffer.timestamp, -1, buffer.timestamp)
+					print "New segment: %s" % r
+
+				return gst.FLOW_OK, buffer
+			finally:
+				self._receiver.queue.task_done()
+		except:
+			traceback.print_exc()
+			return gst.FLOW_ERROR, None
 
 	def do_do_seek(self, segment):
+		print "Asked to seek to %d" % segment.time
 		pos = self._receiver.seek(segment.time)
 		return True
 
-#	def do_prepare_seek_segment(self, seek, segment):
-#		print "Called, Prepare seek segment %s %s" % (seek, segment)
-#		return True
-#		#print "Stream time: %d" % segment.to_stream_time(gst.
-#		return gst.BaseSrc.do_prepare_seek_segment(self, seek, segment)
+	def do_query(self, query):
+		if query.type != gst.QUERY_DURATION:
+			return gst.BaseSrc.do_query(self, query)
 
-#	def queryfunc(self, pad, query):
-#		try:
-#			print(dir(query))
-#			self.info("%s timestamp(buffer):%d" % (pad, buffer.timestamp))
-#			return gst.FLOW_OK
-#		except:
-#			traceback.print_exc()
-#			return gst.FLOW_ERROR
+		duration = 60 * gst.SECOND
+		query.set_duration(gst.FORMAT_TIME, duration)
 
-gst.element_register(CCNSrc, 'ccnsrc')
+		print "Returning %s %d" % (query.parse_duration())
 
+		return True
+
+gobject.type_register(CCNSrc)
+gst.element_register(CCNSrc, 'CCNSrc')
+
+if __name__ == '__main__':
+	gobject.threads_init()
+
+	def bus_call(bus, message, loop):
+		t = message.type
+		if t == gst.MESSAGE_EOS:
+			print("End-of-stream")
+			loop.quit()
+		elif t == gst.MESSAGE_ERROR:
+			err, debug = message.parse_error()
+			print("Error: %s: %s" % (err, debug))
+			loop.quit()
+		return True
+
+	def do_seek(pipeline, val):
+		res = pipeline.seek_simple(gst.FORMAT_TIME, gst.SEEK_FLAG_FLUSH | gst.SEEK_FLAG_ACCURATE, long(val * gst.SECOND))
+		print "Seek result: %s" % res
+
+	pipeline = gst.parse_launch("CCNSrc location=/videostream ! ffdec_h264 max-threads=3 ! xvimagesink")
+
+	loop = gobject.MainLoop()
+	bus = pipeline.get_bus()
+	#bus.add_signal_watch()
+	#bus.connect('message::eos', on_eos)
+	bus.add_watch(bus_call, loop)
+
+	pipeline.set_state(gst.STATE_PLAYING)
+	print "Entering loop"
+
+	do_seek(pipeline, 90)
+
+	try:
+		loop.run()
+	except KeyboardInterrupt:
+		print "Ctrl+C pressed, exitting"
+		pass
+
+	pipeline.set_state(gst.STATE_NULL)
+	pipeline.get_state(gst.CLOCK_TIME_NONE)

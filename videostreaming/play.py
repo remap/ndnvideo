@@ -17,10 +17,23 @@ import gst.interfaces
 import gtk
 gtk.gdk.threads_init()
 
+from src import CCNSrc
+
 class GstPlayer:
 	def __init__(self, videowidget):
 		self.playing = False
-		self.player = gst.element_factory_make("playbin", "player")
+
+		self.src = gst.element_factory_make("CCNSrc")
+		self.decoder = gst.element_factory_make("ffdec_h264")
+		self.sink = gst.element_factory_make("xvimagesink")
+
+
+		self.player = gst.Pipeline()
+		self.player.add_many(self.src, self.decoder, self.sink)
+
+		#self.player = gst.parse_launch("CCNSrc ! ffdec_h264 ! xvimagesink")
+		#self.player = gst.element_factory_make("playbin", "player")
+
 		self.videowidget = videowidget
 		self.on_eos = False
 
@@ -56,7 +69,9 @@ class GstPlayer:
 			self.playing = False
 
 	def set_location(self, location):
-		self.player.set_property('uri', location)
+		self.src.set_property('location', location)
+		self.src.link(self.decoder)
+		self.decoder.link(self.sink)
 
 	def query_position(self):
 		"Returns a (position, duration) tuple"
@@ -237,14 +252,16 @@ class PlayerWindow(gtk.Window):
 				self.scale_value_changed_cb)
 
 	def scale_value_changed_cb(self, scale):
+		self.seek_to = long(scale.get_value() * self.p_duration / 100) # in ns
+
+	def scale_button_release_cb(self, widget, event):
 		# see seek.c:seek_cb
-		real = long(scale.get_value() * self.p_duration / 100) # in ns
+		real = self.seek_to
 		gst.debug('value changed, perform seek to %r' % real)
 		self.player.seek(real)
 		# allow for a preroll
-		self.player.get_state(timeout=50*gst.MSECOND) # 50 ms
+		#self.player.get_state(timeout=50*gst.MSECOND) # 50 ms
 
-	def scale_button_release_cb(self, widget, event):
 		# see seek.cstop_seek
 		widget.disconnect(self.changed_id)
 		self.changed_id = -1
@@ -287,9 +304,9 @@ def main(args):
 	if len(args) != 2:
 		usage()
 
-	if not gst.uri_is_valid(args[1]):
-		sys.stderr.write("Error: Invalid URI: %s\n" % args[1])
-		sys.exit(1)
+#	if not gst.uri_is_valid(args[1]):
+#		sys.stderr.write("Error: Invalid URI: %s\n" % args[1])
+#		sys.exit(1)
 
 	w.load_file(args[1])
 	w.show_all()
