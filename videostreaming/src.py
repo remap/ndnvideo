@@ -10,6 +10,9 @@ import traceback
 
 from receiver import CCNReceiver
 
+def debug(text):
+	print "CCNSrc: %s" % text
+
 class CCNSrc(gst.BaseSrc):
 	__gtype_name__ = 'CCNSrc'
 	__gstdetails__ = ("CCN source", "Source/Network",
@@ -63,11 +66,11 @@ class CCNSrc(gst.BaseSrc):
 
 		seek_args = event.parse_seek()
 
-		print "Requesting seek %s" % str(seek_args)
+		debug("Requesting seek %s" % str(seek_args))
 		return False
 
 	def do_get_caps(self):
-		print "Called do_get_caps"
+		debug("Called do_get_caps")
 		if not self._caps:
 			if self._receiver:
 				self._caps = self._receiver.fetch_stream_info()
@@ -77,17 +80,17 @@ class CCNSrc(gst.BaseSrc):
 		return self._caps
 
 	def do_start(self):
-		print "Called start"
+		debug("Called start")
 		self._receiver.start()
 		return True
 
 	def do_stop(self):
-		print "Called stop"
+		debug("Called stop")
 		self._receiver.stop()
 		return True
 
 	def do_get_size(self, size):
-		print "Called get_size"
+		debug("Called get_size")
 		raise Exception("aaaa!")
 		return False
 
@@ -98,36 +101,38 @@ class CCNSrc(gst.BaseSrc):
 		return False
 
 	def do_create(self, offset, size):
+		#debug("Offset: %d, Size: %d" % (offset, size))
 		try:
-			if not self._receiver:
-				raise AssertionError("_receiver not set")
+			while True:
+				status, buffer = self._receiver.queue.get(True, 5)
 
-			#print "Offset: %d, Size: %d" % (offset, size)
-			try:
-				buffer = self._receiver.queue.get(True, 0.5)
-			except Queue.Empty:
-				return gst.FLOW_OK, gst.Buffer()
+				if self.seek_in_progress is not None:
+					if status != 1: # change this
+						debug("Skipping prefetched junk ...")
+						self._receiver.queue.task_done()
+						continue
 
-			try:
-				if self.seek_in_progress and not buffer.flag_is_set(gst.BUFFER_FLAG_DISCONT):
-					return gst.FLOW_OK, gst.Buffer()
-
-				if buffer.flag_is_set(gst.BUFFER_FLAG_DISCONT):
-					event = gst.event_new_new_segment(False, 1.0, gst.FORMAT_TIME, self.seek_in_progress, -1, self.seek_in_progress)
-					self.seek_in_progress = None
+					debug("Pushing seek'd buffer")
+					event = gst.event_new_new_segment(False, 1.0, gst.FORMAT_TIME,
+					                                  self.seek_in_progress, -1,
+					                                  self.seek_in_progress)
 					r = self.get_static_pad("src").push_event(event)
-					#r = self.new_seamless_segment(buffer.timestamp, -1, buffer.timestamp)
-					print "New segment: %s" % r
+					debug("New segment: %s" % r)
 
-				return gst.FLOW_OK, buffer
-			finally:
+					self.seek_in_progress = None
+					buffer.flag_set(gst.BUFFER_FLAG_DISCONT)
+
 				self._receiver.queue.task_done()
+				return gst.FLOW_OK, buffer
+		except Queue.Empty:
+			debug("No data avilable")
+			return gst.FLOW_OK, gst.Buffer()
 		except:
 			traceback.print_exc()
 			return gst.FLOW_ERROR, None
 
 	def do_do_seek(self, segment):
-		print "Asked to seek to %d" % segment.start
+		debug("Asked to seek to %d" % segment.start)
 		self.seek_in_progress = segment.start
 		pos = self._receiver.seek(segment.start)
 		return True
@@ -136,10 +141,15 @@ class CCNSrc(gst.BaseSrc):
 		if query.type != gst.QUERY_DURATION:
 			return gst.BaseSrc.do_query(self, query)
 
-		duration = 60 * gst.SECOND
+		duration = self._receiver.last_frame
+
+		if not duration:
+			return True
+
+		duration = long(duration.hrs * 3600 + duration.mins * 60 + duration.secs) * gst.SECOND
 		query.set_duration(gst.FORMAT_TIME, duration)
 
-		print "Returning %s %d" % (query.parse_duration())
+		#debug("Returning %s %d" % (query.parse_duration()))
 
 		return True
 
