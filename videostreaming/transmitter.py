@@ -106,6 +106,7 @@ class CCNTransmitter():
 
 
 if __name__ == '__main__':
+	import sys
 	import pygst
 	pygst.require("0.10")
 	import gst
@@ -128,8 +129,14 @@ if __name__ == '__main__':
 			loop.quit()
 		return True
 
-	src = gst.element_factory_make("videotestsrc")
-#	src = gst.element_factory_make("v4l2src")
+	if len(sys.argv) != 2:
+		print "Usage: %s <URI>" % sys.argv[0]
+		sys.exit(1)
+
+	dest = sys.argv[1]
+
+#	src = gst.element_factory_make("videotestsrc")
+	src = gst.element_factory_make("v4l2src")
 
 	scale = gst.element_factory_make("videoscale")
 	scale.set_property('add_borders', True)
@@ -144,7 +151,7 @@ if __name__ == '__main__':
 	encoder.set_property('byte-stream', True)
 
 	sink = CCNSink()
-	transmitter = CCNTransmitter('/videostream', sink)
+	transmitter = CCNTransmitter(dest, sink)
 	encoder.get_pad("src").connect("notify::caps", transmitter.publish_stream_info)
 
 	pipeline = gst.Pipeline()
