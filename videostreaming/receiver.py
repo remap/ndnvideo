@@ -15,7 +15,7 @@ def debug(text):
 	print "CCNReceiver: %s" % text
 
 class CCNReceiver(pyccn.Closure):
-	queue = Queue.Queue(2)
+	queue = Queue.Queue(5)
 	caps = None
 	frame_rate = None
 	last_frame = None
@@ -84,9 +84,14 @@ class CCNReceiver(pyccn.Closure):
 
 		co = self._get_handle.get(self._name_frames, interest)
 		if co:
+			print ">%s<" % co.name
 			self._duration_last = co.name[-1]
 
-		self.last_frame = pytimecode.PyTimeCode(self.frame_rate, start_timecode=self._duration_last)
+		print ">%s<" % self._duration_last
+		if self._duration_last:
+			self.last_frame = pytimecode.PyTimeCode(self.frame_rate, start_timecode=self._duration_last)
+		else:
+			self.last_frame = "00:00:00:00"
 
 	def process_commands(self):
 		try:
@@ -152,6 +157,7 @@ class CCNReceiver(pyccn.Closure):
 		self._segment += 1
 
 		#debug("Issuing an interest for: %s" % name)
+		#interest = pyccn.Interest(interestLifetime=1.0)
 		self._handle.expressInterest(name, self)
 
 	def upcall(self, kind, info):
