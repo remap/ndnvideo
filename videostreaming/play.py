@@ -24,11 +24,16 @@ class GstPlayer:
 		self.playing = False
 
 		self.src = gst.element_factory_make("CCNSrc")
+		self.queue = gst.element_factory_make("queue2")
+		self.queue.set_property('use-buffering', True)
 		self.decoder = gst.element_factory_make("ffdec_h264")
+		#self.decoder.set_property('skip-frame', 5)
+		self.decoder.set_property('max-threads', 3)
+		#self.convert = gst.element_factory_make("colorspace")
 		self.sink = gst.element_factory_make("xvimagesink")
 
 		self.player = gst.Pipeline()
-		self.player.add_many(self.src, self.decoder, self.sink)
+		self.player.add_many(self.src, self.queue, self.decoder, self.sink)
 
 		#self.player = gst.parse_launch("CCNSrc ! ffdec_h264 ! xvimagesink")
 		#self.player = gst.element_factory_make("playbin", "player")
@@ -69,8 +74,10 @@ class GstPlayer:
 
 	def set_location(self, location):
 		self.src.set_property('location', location)
-		self.src.link(self.decoder)
+		self.src.link(self.queue)
+		self.queue.link(self.decoder)
 		self.decoder.link(self.sink)
+		#self.convert.link(self.sink)
 
 	def query_position(self):
 		"Returns a (position, duration) tuple"

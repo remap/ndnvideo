@@ -15,17 +15,15 @@ def debug(text):
 	print "CCNReceiver: %s" % text
 
 class CCNReceiver(pyccn.Closure):
-	queue = Queue.Queue(5)
+	queue = Queue.Queue(50)
 	caps = None
 	frame_rate = None
 	last_frame = None
 
 	_cmd_q = Queue.Queue(2)
 	_running = False
-	_segment = 0
 	_seek_segment = None
 	_duration_last = None
-	_purge_data = False
 
 	def __init__(self, uri):
 		self._handle = pyccn.CCN()
@@ -33,6 +31,7 @@ class CCNReceiver(pyccn.Closure):
 		self._uri = pyccn.Name(uri)
 		self._name_segments = self._uri.append('segments')
 		self._name_frames = self._uri.append('frames')
+		self._pipeline = utils.PipelineFetch(100, self.issue_interest, self.handle_data)
 
 	def fetch_stream_info(self):
 		name = self._uri.append('stream_info')
@@ -104,7 +103,9 @@ class CCNReceiver(pyccn.Closure):
 		if cmd[0] == CMD_SEEK:
 			tc, segment = self.fetch_seek_query(cmd[1])
 			debug("Seeking to segment %d [%s]" % (segment, tc))
-			self._seek_segment = segment
+			self._seek_segment = True
+			self._upcall_segbuf = []
+			self._pipeline.reset(segment)
 			self._cmd_q.task_done()
 		else:
 			raise Exception, "Unknown command: %d" % cmd
@@ -120,12 +121,13 @@ class CCNReceiver(pyccn.Closure):
 		self._receiver_thread = threading.Thread(target=self.run)
 		self._running = True
 		self._receiver_thread.start()
-		self.next_interest()
 
 	def stop(self):
 		self._running = False
 		self._handle.setRunTimeout(0)
+		debug("Waiting for ccn to shutdown")
 		self._receiver_thread.join()
+		debug("Shot down")
 
 	def finish_ccn_loop(self):
 		self._handle.setRunTimeout(0)
@@ -146,53 +148,45 @@ class CCNReceiver(pyccn.Closure):
 
 		debug("Finished running ccn loop")
 
-	def next_interest(self):
-		if type(self._seek_segment) is int:
-			debug("Starting pulling from segment %d" % self._seek_segment)
-			self.segbuf = []
-			self._segment = self._seek_segment
-			self._seek_segment = True
-
-		name = self._name_segments.appendSegment(self._segment)
-		self._segment += 1
-
+	def issue_interest(self, segment):
+		name = self._name_segments.appendSegment(segment)
 		#debug("Issuing an interest for: %s" % name)
-		#interest = pyccn.Interest(interestLifetime=1.0)
 		self._handle.expressInterest(name, self)
+
+	def handle_data(self, co):
+		if not hasattr(self, '_upcall_segbuf'):
+			self._upcall_segbuf = []
+
+		last, content = utils.packet2buffer(co.content)
+		debug("Received %s (left: %d)" % (co.name, last))
+
+		self._upcall_segbuf.append(content)
+
+		if last == 0:
+			status = 0
+
+			#Merging, maybe I shouldn't do this :/
+			res = self._upcall_segbuf[0]
+			for e in self._upcall_segbuf[1:]:
+				res = res.merge(e)
+			self._upcall_segbuf = []
+
+			# Marking jump due to seeking
+			if self._seek_segment == True:
+				debug("Marking as discontinued")
+				status = CMD_SEEK
+				self._seek_segment = None
+
+			#debug("before put")
+			self.queue.put((status, res))
+			#debug("after put")
 
 	def upcall(self, kind, info):
 		if kind == pyccn.UPCALL_FINAL:
 			return pyccn.RESULT_OK
 
 		elif kind == pyccn.UPCALL_CONTENT:
-			if not hasattr(self, '_upcall_segbuf'):
-				self._upcall_segbuf = []
-
-			#debug("Received %s" % info.ContentObject.name)
-
-			last, content = utils.packet2buffer(info.ContentObject.content)
-			self._upcall_segbuf.append(content)
-
-			if last == 0:
-				status = 0
-
-				#Merging, maybe I shouldn't do this :/
-				res = self._upcall_segbuf[0]
-				for e in self._upcall_segbuf[1:]:
-					res = res.merge(e)
-				self._upcall_segbuf = []
-
-				# Marking jump due to seeking
-				if self._seek_segment == True:
-					debug("Marking as discontinued")
-					status = CMD_SEEK
-					self._seek_segment = None
-
-				#debug("before put")
-				self.queue.put((status, res))
-				#debug("after put")
-
-			self.next_interest()
+			self._pipeline.put(utils.seg2num(info.ContentObject.name[-1]), info.ContentObject)
 			return pyccn.RESULT_OK
 
 		elif kind == pyccn.UPCALL_INTEREST_TIMED_OUT:
@@ -215,19 +209,20 @@ if __name__ == '__main__':
 		ns = int(sec * 1000 * 1000 * 1000)
 		receiver.seek(ns)
 
-	receiver = CCNReceiver('/videostream')
+	receiver = CCNReceiver('/ndn/ucla.edu/apps/hydra/videostream')
 	receiver.fetch_stream_info()
+	receiver.seek(0)
 
 	thread = threading.Thread(target=consumer, args=[receiver])
 	thread.start()
 
-	timer = threading.Timer(2, do_seek, args=[receiver, 30])
+	timer = threading.Timer(2, do_seek, args=[receiver, 3 * 60])
 	timer.start()
 
-	timer = threading.Timer(5, do_seek, args=[receiver, 0])
+	timer = threading.Timer(7, do_seek, args=[receiver, 0])
 	timer.start()
 
-	timer = threading.Timer(6, do_seek, args=[receiver, 0])
+	timer = threading.Timer(8, do_seek, args=[receiver, 0])
 	timer.start()
 
 	receiver.start()
