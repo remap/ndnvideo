@@ -60,6 +60,9 @@ def safe_get(handle, name, template = None):
 
 	return r
 
+def seg2num(segment):
+	return long(struct.unpack("!Q", (8 - len(segment)) * "\x00" + segment)[0])
+
 def packet(name, data, key):
 	co = pyccn.ContentObject()
 	co.name = pyccn.Name(name)
@@ -380,6 +383,42 @@ class VersionedPull(pyccn.Closure):
 		self.callback(kind, info)
 
 		return pyccn.RESULT_OK
+
+class PipelineFetch():
+	def __init__(self, window, request_cb, receive_cb):
+		self.window = window
+		self.request_cb = request_cb
+		self.receive_cb = receive_cb
+
+	def reset(self, position = 0):
+		self._buf = {}
+		self._position = position
+		self._requested = position - 1
+		self.request_data()
+
+	def put(self, number, data):
+		if number < self._position:
+			print "%d < %d - dropping" % (number, self._position)
+		else:
+			self._buf[str(number)] = data
+		self.push_out()
+
+	def request_data(self):
+		stop = self._position + self.window - 1
+		while self._requested < stop:
+			self._requested += 1
+			if not self.request_cb(self._requested):
+				return
+
+	def push_out(self):
+		while self._buf.has_key(str(self._position)):
+			data = self._buf[str(self._position)]
+			self.receive_cb(data)
+
+			del self._buf[str(self._position)]
+			self._position += 1
+
+		self.request_data()
 
 if __name__ == '__main__':
 	def make_content(name):

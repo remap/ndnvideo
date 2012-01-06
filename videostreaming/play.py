@@ -24,12 +24,16 @@ class GstPlayer:
 		self.playing = False
 
 		self.src = gst.element_factory_make("CCNSrc")
+		self.queue = gst.element_factory_make("queue2")
+		self.queue.set_property('use-buffering', True)
 		self.decoder = gst.element_factory_make("ffdec_h264")
-		self.sink = gst.element_factory_make("xvimagesink")
-
+		#self.decoder.set_property('skip-frame', 5)
+		self.decoder.set_property('max-threads', 3)
+		self.convert = gst.element_factory_make("ffmpegcolorspace")
+		self.sink = gst.element_factory_make("ximagesink")
 
 		self.player = gst.Pipeline()
-		self.player.add_many(self.src, self.decoder, self.sink)
+		self.player.add_many(self.src, self.queue, self.decoder, self.convert, self.sink)
 
 		#self.player = gst.parse_launch("CCNSrc ! ffdec_h264 ! xvimagesink")
 		#self.player = gst.element_factory_make("playbin", "player")
@@ -70,8 +74,10 @@ class GstPlayer:
 
 	def set_location(self, location):
 		self.src.set_property('location', location)
-		self.src.link(self.decoder)
-		self.decoder.link(self.sink)
+		self.src.link(self.queue)
+		self.queue.link(self.decoder)
+		self.decoder.link(self.convert)
+		self.convert.link(self.sink)
 
 	def query_position(self):
 		"Returns a (position, duration) tuple"
@@ -252,15 +258,21 @@ class PlayerWindow(gtk.Window):
 				self.scale_value_changed_cb)
 
 	def scale_value_changed_cb(self, scale):
-		self.seek_to = long(scale.get_value() * self.p_duration / 100) # in ns
-
-	def scale_button_release_cb(self, widget, event):
+#		self.seek_to = long(scale.get_value() * self.p_duration / 100) # in ns
 		# see seek.c:seek_cb
-		real = self.seek_to
+		real = long(scale.get_value() * self.p_duration / 100) # in ns
 		gst.debug('value changed, perform seek to %r' % real)
 		self.player.seek(real)
 		# allow for a preroll
-		#self.player.get_state(timeout=50*gst.MSECOND) # 50 ms
+		self.player.get_state(timeout=50*gst.MSECOND) # 50 ms
+
+	def scale_button_release_cb(self, widget, event):
+#		# see seek.c:seek_cb
+#		real = self.seek_to
+#		gst.debug('value changed, perform seek to %r' % real)
+#		self.player.seek(real)
+#		# allow for a preroll
+#		#self.player.get_state(timeout=50*gst.MSECOND) # 50 ms
 
 		# see seek.cstop_seek
 		widget.disconnect(self.changed_id)
