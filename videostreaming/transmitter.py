@@ -10,6 +10,7 @@ class CCNTransmitter():
 	_chunk_size = 4096
 	_segment = 0
 	_running = False
+	_caps = None
 
 	def __init__(self, uri, sink):
 		self._sink = sink
@@ -25,12 +26,15 @@ class CCNTransmitter():
 		self._signed_info_frames = pyccn.SignedInfo(self._key.publicKeyID, pyccn.KeyLocator(self._key))
 
 	def publish_stream_info(self, pad, args):
-		caps = pad.get_negotiated_caps()
+		if self._caps:
+			return
+
+		self._caps = pad.get_negotiated_caps()
 
 		name = self._basename.append("stream_info")
 
-		print "Publishing %s under %s" % (caps, name)
-		co = pyccn.ContentObject(name, caps, self._signed_info)
+		print "Publishing %s under %s" % (self._caps, name)
+		co = pyccn.ContentObject(name, self._caps, self._signed_info)
 		co.sign(self._key)
 
 		self._flow_controller.put(co)
@@ -106,6 +110,7 @@ class CCNTransmitter():
 
 
 if __name__ == '__main__':
+	import sys
 	import pygst
 	pygst.require("0.10")
 	import gst
@@ -128,11 +133,14 @@ if __name__ == '__main__':
 			loop.quit()
 		return True
 
-	src = gst.element_factory_make("videotestsrc")
-#	src = gst.element_factory_make("v4l2src")
+	if len(sys.argv) != 2:
+		print "Usage: %s <URI>" % sys.argv[0]
+		sys.exit(1)
 
-	scale = gst.element_factory_make("videoscale")
-	scale.set_property('add_borders', True)
+	dest = sys.argv[1]
+
+#	src = gst.element_factory_make("videotestsrc")
+	src = gst.element_factory_make("v4l2src")
 
 	overlay = gst.element_factory_make("timeoverlay")
 	overlay.set_property('shaded-background', True)
@@ -144,19 +152,16 @@ if __name__ == '__main__':
 	encoder.set_property('byte-stream', True)
 
 	sink = CCNSink()
-	transmitter = CCNTransmitter('/videostream', sink)
+	transmitter = CCNTransmitter(dest, sink)
 	encoder.get_pad("src").connect("notify::caps", transmitter.publish_stream_info)
 
 	pipeline = gst.Pipeline()
-	pipeline.add(src, scale, overlay, encoder, sink)
+	pipeline.add(src, overlay, encoder, sink)
 
 #	gst.element_link_many(src, encoder, muxer, sink)
 
 	src_caps = gst.caps_from_string("video/x-raw-yuv,width=704,height=480")
-	src.link_filtered(scale, src_caps)
-
-	scale_caps = gst.caps_from_string("video/x-raw-yuv,width=704,height=576")
-	scale.link_filtered(overlay, scale_caps)
+	src.link_filtered(overlay, src_caps)
 
 	overlay.link(encoder)
 	encoder.link(sink)
