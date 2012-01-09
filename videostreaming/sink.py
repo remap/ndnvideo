@@ -58,7 +58,7 @@ class CCNSink(gst.Element):
 		framerate = caps['framerate']
 		fr = utils.framerate2str(framerate)
 
-		self._tc = pytimecode.PyTimeCode(fr, frames=0)
+		self._tc = pytimecode.PyTimeCode(fr, frames=0, drop_frame=True)
 
 	def chainfunc(self, pad, buffer):
 		try :

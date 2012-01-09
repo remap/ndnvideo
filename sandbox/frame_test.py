@@ -5,7 +5,6 @@ pygst.require("0.10")
 import gst
 import gobject
 
-gobject.threads_init()
 
 import traceback
 import pytimecode
@@ -29,7 +28,7 @@ class MySink(gst.Element):
 
 		gst.info('setting chain/event functions')
 		self.sinkpad.set_chain_function(self.chainfunc)
-		self.sinkpad.set_event_function(self.eventfunc)
+#		self.sinkpad.set_event_function(self.eventfunc)
 
 	def notify_caps(self, pad, args):
 		caps = pad.get_negotiated_caps()
@@ -41,27 +40,29 @@ class MySink(gst.Element):
 
 	def chainfunc(self, pad, buffer):
 		try:
-#			self.info("%s timestamp(buffer):%d" % (pad, buffer.timestamp))
-
-#			self.info("offset %d, offset_end %d" % (buffer.offset, buffer.offset_end))
-#			self.info("duration %d" % buffer.duration)
-			self.info("flags %s KeyFrame: %s" % (buffer.flags, not buffer.flag_is_set(gst.BUFFER_FLAG_DELTA_UNIT)))
+			print("----------------------------------------------------------------")
+			print("timestamp: %d duration: %d" % (buffer.timestamp, buffer.duration))
+			print("offset %d, offset_end %d" % (buffer.offset, buffer.offset_end))
+			print("flags %s KeyFrame: %s" % (buffer.flags, not buffer.flag_is_set(gst.BUFFER_FLAG_DELTA_UNIT)))
 #			self.info("caps %s" % buffer.caps)
 
-			if buffer.flags != 256 and buffer.flags != 0:
-				return gst.FLOW_ERROR
+#			if buffer.flags != 256 and buffer.flags != 0:
+#				return gst.FLOW_ERROR
 
 			framerate = buffer.caps[0]['framerate']
 
-			self.info("timestamp: %d" % buffer.timestamp)
-#			self.info("offset %d, offset_end %d" % (buffer.offset, buffer.offset_end))
-			self.info("framerate: %s %f" % (framerate, framerate))
+			print("framerate: %s %f" % (framerate, framerate))
 			frame_frac = (buffer.timestamp * float(framerate) /  gst.SECOND)
 			frame = round(frame_frac)
-			self.info("frame = %f %d" % (frame_frac, frame))
-			self.info("counter = %d" % self._counter)
-			self.info("timecode = %s" % self._tc)
-			assert self._counter == frame
+			print("frame = %f %d" % (frame_frac, frame))
+#			print("frame2 = %f" % (buffer.timestamp / float(buffer.duration)))
+#			print("frame3 = %f" % ((buffer.timestamp * 29.97) / gst.SECOND))
+#			print("frame4 = %f" % ((buffer.timestamp * float(29.96812023580774)) / gst.SECOND))
+			print("counter = %d" % self._counter)
+			print("timecode = %s" % self._tc)
+			tc = pytimecode.PyTimeCode("29.97", start_seconds=buffer.timestamp/(float)(gst.SECOND), drop_frame=False)
+			print("calculated timecode = %s" % tc)
+#			assert self._counter == frame
 			#print dir(buffer)
 
 #			if self._counter > 10:
@@ -82,26 +83,24 @@ class MySink(gst.Element):
 gobject.type_register(MySink)
 
 if __name__ == '__main__':
+	gobject.threads_init()
+
 	src = gst.element_factory_make("v4l2src")
-	src.set_property('do-timestamp', True)
+	src_caps = gst.caps_from_string("video/x-raw-yuv,width=704,height=480")
 
-	scale = gst.element_factory_make("videoscale")
-	scale.set_property('add_borders', True)
+	rate = gst.element_factory_make("videorate")
+	rate_caps = gst.caps_from_string("video/x-raw-yuv,framerate=30000/1001")
 
-	encoder = gst.element_factory_make("ffenc_h263")
+	encoder = gst.element_factory_make("x264enc")
+#	encoder.set_property('threads', 1)
 
-#	sink = gst.element_factory_make("fakesink")
 	sink = MySink()
 
 	pipeline = gst.Pipeline()
-	pipeline.add(src, scale, encoder, sink)
+	pipeline.add(src, rate, encoder, sink)
 
-	src_caps = gst.caps_from_string("video/x-raw-yuv,width=704,height=480")
-	src.link_filtered(scale, src_caps)
-
-	scale_caps = gst.caps_from_string("video/x-raw-yuv,width=704,height=576")
-	scale.link_filtered(encoder, scale_caps)
-
+	src.link_filtered(rate, src_caps)
+	rate.link_filtered(encoder, rate_caps)
 	encoder.link(sink)
 
 	loop = gobject.MainLoop()

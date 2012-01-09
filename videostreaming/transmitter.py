@@ -141,6 +141,10 @@ if __name__ == '__main__':
 
 #	src = gst.element_factory_make("videotestsrc")
 	src = gst.element_factory_make("v4l2src")
+	src_caps = gst.caps_from_string("video/x-raw-yuv,width=704,height=480")
+
+	rate = gst.element_factory_make("videorate")
+	rate_caps = gst.caps_from_string("video/x-raw-yuv,framerate=30000/1001")
 
 	overlay = gst.element_factory_make("timeoverlay")
 	overlay.set_property('shaded-background', True)
@@ -156,13 +160,12 @@ if __name__ == '__main__':
 	encoder.get_pad("src").connect("notify::caps", transmitter.publish_stream_info)
 
 	pipeline = gst.Pipeline()
-	pipeline.add(src, overlay, encoder, sink)
+	pipeline.add(src, rate, overlay, encoder, sink)
 
 #	gst.element_link_many(src, encoder, muxer, sink)
 
-	src_caps = gst.caps_from_string("video/x-raw-yuv,width=704,height=480")
-	src.link_filtered(overlay, src_caps)
-
+	src.link_filtered(rate, src_caps)
+	rate.link_filtered(overlay, rate_caps)
 	overlay.link(encoder)
 	encoder.link(sink)
 
