@@ -5,6 +5,7 @@ import gst
 import struct, time, Queue, bisect, threading, math
 from operator import itemgetter
 import pyccn
+from pytimecode import PyTimeCode
 
 packet_hdr = "!IQQ"
 packet_hdr_len = struct.calcsize(packet_hdr)
@@ -419,6 +420,37 @@ class PipelineFetch():
 			self._position += 1
 
 		self.request_data()
+
+class TCConverter:
+	def __init__(self, framerate):
+		self.fr = framerate
+		if framerate.num == 30 and framerate.denom == 1:
+			self.fr_str = "30"
+			self.df = False
+		elif framerate.num == 30000 and framerate.denom == 1001:
+			self.fr_str = "29.97"
+			self.df = True
+		elif framerate.num == 25 and framerate.denom == 1:
+			self.fr_str = "25"
+			self.df = False
+		else:
+			raise ValueError("Unsupported framerate: %s" % framerate)
+
+	def ts2frame(self, ts):
+		return long(round(gst.Fraction(ts, gst.SECOND) * self.fr))
+
+	def frame2ts(self, frame):
+		return long(round(frame / self.fr * gst.SECOND))
+
+	def ts2tc(self, ts):
+		return PyTimeCode(self.fr_str, frames = self.ts2frame(ts), drop_frame = self.df)
+
+	def tc2ts(self, tc):
+		if type(tc) is PyTimeCode:
+			t = tc
+		else:
+			t = PyTimeCode(self.fr_str, start_timecode = tc, drop_frame = self.df)
+		return self.frame2ts(t.frames)
 
 if __name__ == '__main__':
 	def make_content(name):

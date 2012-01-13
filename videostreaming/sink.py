@@ -56,20 +56,19 @@ class CCNSink(gst.Element):
 		caps = pad.get_negotiated_caps()[0]
 
 		framerate = caps['framerate']
-		fr = utils.framerate2str(framerate)
-
-		self._tc = pytimecode.PyTimeCode(fr, frames=0, drop_frame=True)
+		self._tc = utils.TCConverter(framerate)
 
 	def chainfunc(self, pad, buffer):
 		try :
 			if not self._tc:
-				print "setting tc"
+				print "setting up tc"
 				self._set_tc(pad)
 
 			#print "offset: %d offset_end: %d" % (buffer.offset, buffer.offset_end)
-			self.queue.put((self._tc.make_timecode(), buffer))
-
-			self._tc.next()
+			#self.queue.put((self._tc.make_timecode(), buffer))
+			tc = self._tc.ts2tc(buffer.timestamp).make_timecode()
+			print "Publishing %s" % tc
+			self.queue.put((tc, buffer))
 
 			return gst.FLOW_OK
 		except:
