@@ -1,5 +1,10 @@
 #! /usr/bin/env python
 
+import pygst
+pygst.require("0.10")
+import gst
+import gobject
+
 import Queue, struct, sys, threading, math, os
 import traceback
 import pyccn
