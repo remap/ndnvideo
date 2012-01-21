@@ -2,64 +2,14 @@ import pygst
 pygst.require('0.10')
 import gst
 
-import struct, time, Queue, bisect, threading, math
+import struct, time, Queue, bisect, threading, math, os
 from operator import itemgetter
 import pyccn
+from pyccn import _pyccn
 from pytimecode import PyTimeCode
 
 packet_hdr = "!IQQ"
 packet_hdr_len = struct.calcsize(packet_hdr)
-
-class GetResponse(pyccn.Closure):
-	def __init__(self, event):
-		self.event = event
-		self.kind = None
-		self.content_object = None
-
-	def upcall(self, kind, info):
-		self.event.acquire()
-
-		try:
-			print "got %d" % kind
-			if kind == pyccn.UPCALL_FINAL:
-				return pyccn.RESULT_OK
-
-			if kind == pyccn.UPCALL_CONTENT_UNVERIFIED:
-				return pyccn.RESULT_VERIFY
-
-			if not kind in [pyccn.UPCALL_CONTENT]: # needs also CONTENT_RAW
-				return pyccn.RESULT_ERR
-
-			self.kind = kind
-			self.content_object = info.ContentObject
-			self.event.notify()
-		finally:
-			self.event.release()
-
-		return pyccn.RESULT_OK
-
-	def get_response(self):
-		return self.content_object
-
-def safe_get(handle, name, template = None):
-	#event = threading.Event()
-	event = threading.Condition()
-
-	response = GetResponse(event);
-	event.acquire()
-	ret = handle.expressInterest(name, response, template)
-	print "waiting"
-	for thread in threading.enumerate():
-		print "%s - %s" % (thread.getName(), thread)
-
-	event.wait()
-
-	r = response.get_response()
-
-	event.release()
-	print "not waiting"
-
-	return r
 
 def seg2num(segment):
 	return long(struct.unpack("!Q", (8 - len(segment)) * "\x00" + segment)[0])
@@ -73,6 +23,9 @@ def packet(name, data, key):
 	co.sign(key)
 	return co
 
+def signed(val):
+	return struct.unpack("=q", struct.pack("=Q", long(val)))[0]
+
 def buffer2packet(left, buffer):
 	global packet_hdr
 	return struct.pack(packet_hdr, left, buffer.timestamp, buffer.duration) + buffer.data
@@ -80,11 +33,11 @@ def buffer2packet(left, buffer):
 def packet2buffer(packet):
 	global packet_hdr, packet_hdr_len
 
-	buf = gst.Buffer(packet[packet_hdr_len:])
-	#left = 0
-	left, buf.timestamp, buf.duration = struct.unpack_from(packet_hdr, packet)
+	hdr = packet[:packet_hdr_len]
+	left, timestamp, duration = struct.unpack(packet_hdr, hdr)
+	buf = bytes(packet[packet_hdr_len:])
 
-	return left, buf
+	return left, buf, timestamp, duration
 
 def framerate2str(framerate):
 	if framerate.num == 30 and framerate.denom == 1:
@@ -93,10 +46,37 @@ def framerate2str(framerate):
 		fr_str = "29.97"
 	elif framerate.num == 25 and framerate.denom == 1:
 		fr_str = "25"
+	elif framerate.num == 24000 and framerate.denom == 1001:
+		fr_str = "23.98"
 	else:
 		raise ValueError("Unsupported framerate: %s" % framerate)
 
 	return fr_str
+
+class RepoPublisher(pyccn.Closure):
+	_sequence = 0;
+
+	def __init__(self, handle, repo_loc, prefix):
+		self.handle = handle
+		self.import_loc = os.path.join(repo_loc, "import")
+		self.prefix = prefix
+
+		self.name = "/%C1.R.af~"
+		self.interest_tpl = pyccn.Interest(scope = 1)
+
+	def put(self, content):
+		name = self.prefix + "_" + str(self._sequence)
+		self._sequence += 1
+
+		of = open(os.path.join(self.import_loc, name), "wb")
+		of.write(_pyccn.dump_charbuf(content.ccn_data))
+		of.close()
+
+		self.handle.expressInterest(pyccn.Name(self.name + name), self, self.interest_tpl)
+		self.handle.run(0)
+
+	def upcall(self, kind, info):
+		return pyccn.RESULT_OK
 
 class RingBuffer:
 	def __init__(self, size):
@@ -422,6 +402,7 @@ class PipelineFetch():
 		self.request_data()
 
 class TCConverter:
+	"""timestamp <--> timecode conversion class"""
 	def __init__(self, framerate):
 		self.fr = framerate
 		if framerate.num == 30 and framerate.denom == 1:
@@ -433,23 +414,38 @@ class TCConverter:
 		elif framerate.num == 25 and framerate.denom == 1:
 			self.fr_str = "25"
 			self.df = False
+		elif framerate.num == 24000 and framerate.denom == 1001:
+			self.fr_str = "23.98"
+			self.df = False # Seems like it is non drop frame
 		else:
 			raise ValueError("Unsupported framerate: %s" % framerate)
 
 	def ts2frame(self, ts):
+		"""Converts timestamp to a frame number"""
 		return long(round(gst.Fraction(ts, gst.SECOND) * self.fr))
 
 	def frame2ts(self, frame):
+		"""Converts frame number to a timestamp"""
 		return long(round(frame / self.fr * gst.SECOND))
 
-	def ts2tc(self, ts):
+	def ts2tc_obj(self, ts):
+		"""Generate TimeCode object from a timestamp"""
 		return PyTimeCode(self.fr_str, frames = self.ts2frame(ts), drop_frame = self.df)
 
+	def tc2tc_obj(self, tc):
+		"""Generate TimeCode object from a timecode string"""
+		return PyTimeCode(self.fr_str, start_timecode = tc, drop_frame = self.df)
+
+	def ts2tc(self, ts):
+		"""Convert timestamp to a timecode string"""
+		return self.ts2tc_obj(ts).make_timecode()
+
 	def tc2ts(self, tc):
+		"""Convert timecode (object or string) into a timestamp"""
 		if type(tc) is PyTimeCode:
 			t = tc
 		else:
-			t = PyTimeCode(self.fr_str, start_timecode = tc, drop_frame = self.df)
+			t = self.tc2tc_obj(tc)
 		return self.frame2ts(t.frames)
 
 if __name__ == '__main__':
