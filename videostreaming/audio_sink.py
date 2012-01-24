@@ -45,7 +45,7 @@ class CCNAudioPacketizer:
 		return co
 
 	def prepare_index_packet(self, index, segment):
-		name = self._name_index.append(index)
+		name = self._name_index.appendSegment(index)
 
 		co = pyccn.ContentObject(name, segment, self._signed_info_index)
 		co.sign(self._key)
@@ -63,10 +63,10 @@ class CCNAudioPacketizer:
 
 	def process_buffer(self, buffer):
 #		if not buffer.flag_is_set(gst.BUFFER_FLAG_DELTA_UNIT):
-#			index = self._tc.ts2tc(buffer.timestamp)
-#			print "index %s" % index
-#			packet = self.prepare_index_packet(index, self._segment)
-#			self.queue.put(packet)
+
+		print "index %s" % buffer.timestamp
+		packet = self.prepare_index_packet(buffer.timestamp, self._segment)
+		self.queue.put(packet)
 
 		chunk_size = self._chunk_size - utils.packet_hdr_len
 		nochunks = int(math.ceil(buffer.size / float(chunk_size)))
@@ -136,7 +136,7 @@ class AudioSink(gst.BaseSink):
 		return gst.FLOW_OK
 
 	def do_render(self, buffer):
-		#print "Buffer timestamp %d %d %d %s" % (buffer.timestamp, buffer.duration, buffer.flags, buffer.caps)
+		print "Buffer timestamp %d %d %d %s" % (buffer.timestamp, buffer.duration, buffer.flags, buffer.caps)
 		self.packetizer.process_buffer(buffer)
 		return gst.FLOW_OK
 
@@ -181,11 +181,16 @@ if __name__ == '__main__':
 	loop = gobject.MainLoop()
 	pipeline.set_state(gst.STATE_PLAYING)
 
-	try:
-		loop.run()
-	except KeyboardInterrupt:
-		print "Ctrl+C pressed, exitting"
-		pass
+	while True:
+		try:
+			loop.run()
+		except KeyboardInterrupt:
+			print "Ctrl+C pressed, exitting"
+			eos = gst.event_new_eos()
+			pipeline.send_event(eos)
+			continue
+
+		break
 
 	pipeline.set_state(gst.STATE_NULL)
 	pipeline.get_state(gst.CLOCK_TIME_NONE)

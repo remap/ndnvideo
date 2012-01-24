@@ -17,26 +17,29 @@ import gst.interfaces
 import gtk
 gtk.gdk.threads_init()
 
-from src import CCNSrc
+from video_src import VideoSrc
 
 class GstPlayer:
 	def __init__(self, videowidget):
 		self.playing = False
 
-		self.src = gst.element_factory_make("CCNSrc")
-		self.queue = gst.element_factory_make("queue2")
-		self.queue.set_property('use-buffering', True)
-		self.decoder = gst.element_factory_make("ffdec_h264")
-		#self.decoder.set_property('skip-frame', 5)
-		self.decoder.set_property('max-threads', 3)
-		self.convert = gst.element_factory_make("ffmpegcolorspace")
-		self.sink = gst.element_factory_make("ximagesink")
+		self.player = gst.parse_launch("ffdec_h264 name=decoder max-threads=3 ! ffmpegcolorspace ! xvimagesink")
+		self.src = gst.element_factory_make("VideoSrc")
+		self.player.add(self.src)
 
-		self.player = gst.Pipeline()
-		self.player.add_many(self.src, self.queue, self.decoder, self.convert, self.sink)
-
-		#self.player = gst.parse_launch("CCNSrc ! ffdec_h264 ! xvimagesink")
-		#self.player = gst.element_factory_make("playbin", "player")
+#		self.queue = gst.element_factory_make("queue2")
+#		#self.queue.set_property('use-buffering', True)
+#		self.decoder = gst.element_factory_make("ffdec_h264")
+#		#self.decoder.set_property('skip-frame', 5)
+#		self.decoder.set_property('max-threads', 3)
+#		self.convert = gst.element_factory_make("ffmpegcolorspace")
+#		self.sink = gst.element_factory_make("xvimagesink")
+#
+#		self.player = gst.Pipeline()
+#		self.player.add_many(self.src, self.decoder, self.convert, self.sink)
+#
+#		#self.player = gst.parse_launch("CCNSrc ! ffdec_h264 ! xvimagesink")
+#		#self.player = gst.element_factory_make("playbin", "player")
 
 		self.videowidget = videowidget
 		self.on_eos = False
@@ -73,11 +76,16 @@ class GstPlayer:
 			self.playing = False
 
 	def set_location(self, location):
+		print "%s >%s<" % (type(location), location)
 		self.src.set_property('location', location)
-		self.src.link(self.queue)
-		self.queue.link(self.decoder)
-		self.decoder.link(self.convert)
-		self.convert.link(self.sink)
+
+		decoder = self.player.get_by_name('decoder')
+		self.src.link(decoder)
+#		self.src.set_property('location', location)
+#		self.src.link(self.decoder)
+#		#self.queue.link(self.decoder)
+#		self.decoder.link(self.convert)
+#		self.convert.link(self.sink)
 
 	def query_position(self):
 		"Returns a (position, duration) tuple"
