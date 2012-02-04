@@ -7,26 +7,21 @@ import gobject
 
 import pyccn
 
-from audio_src import AudioSrc
-from video_src import VideoSrc
+from audio_sink import AudioSink
+from video_sink import VideoSink
 
 if __name__ == '__main__':
 	gobject.threads_init()
 
-	pipeline = gst.parse_launch("queue name=vdecoder ! ffdec_h264 max-threads=3 skip-frame=5 ! autovideosink \
-		queue name=adecoder ! ffdec_aac ! autoaudiosink")
+	pipeline = gst.parse_launch("filesrc location=army.mp4 ! qtdemux name=demux \
+		demux. ! queue ! VideoSink name=video \
+		demux. ! queue ! AudioSink name=audio")
 
-	vdecoder = pipeline.get_by_name("vdecoder")
-	adecoder = pipeline.get_by_name("adecoder")
+	video = pipeline.get_by_name("video")
+	audio = pipeline.get_by_name("audio")
 
-	video = gst.element_factory_make("VideoSrc")
-	audio = gst.element_factory_make("AudioSrc")
 	video.set_property('location', '/repo/army/video')
 	audio.set_property('location', '/repo/army/audio')
-
-	pipeline.add(video, audio)
-	video.link(vdecoder)
-	audio.link(adecoder)
 
 	loop = gobject.MainLoop()
 	pipeline.set_state(gst.STATE_PLAYING)

@@ -56,8 +56,17 @@ def framerate2str(framerate):
 class RepoPublisher(pyccn.Closure):
 	_sequence = 0;
 
-	def __init__(self, handle, repo_loc, prefix):
+	def __init__(self, handle, prefix, repo_loc = None):
 		self.handle = handle
+
+		if not repo_loc:
+			if not os.environ.has_key('CCNR_DIRECTORY'):
+				raise Exception("CCNR_DIRECTORY not defined and no repo location specified")
+
+			dir = os.environ['CCNR_DIRECTORY']
+			dir = os.path.expanduser(dir)
+			repo_loc = os.path.expandvars(dir)
+
 		self.import_loc = os.path.join(repo_loc, "import")
 		self.prefix = prefix
 

@@ -1,21 +1,86 @@
-#! /usr/bin/env python
-
-import pygst
-pygst.require("0.10")
-import gst
-import gobject
-
-import Queue, traceback, threading
+import math
 import pyccn
 
 import utils
 
-CMD_SEEK = 1
+class CCNPacketizer(object):
+	_chunk_size = 4096
+	_segment = 0
+	_caps = None
 
-def debug(cls, text):
-	print "%s: %s" % (cls.__class__.__name__, text)
+	def __init__(self, publisher, uri):
+		self.publisher = publisher
 
-class CCNVideoDepacketizer(pyccn.Closure):
+		self._basename = pyccn.Name(uri)
+		self._name_segments = self._basename.append("segments")
+		self._name_frames = self._basename.append("index")
+
+		self._key = pyccn.CCN.getDefaultKey()
+		self._signed_info = pyccn.SignedInfo(self._key.publicKeyID, pyccn.KeyLocator(self._key))
+		self._signed_info_frames = pyccn.SignedInfo(self._key.publicKeyID, pyccn.KeyLocator(self._key))
+
+	def set_caps(self, caps):
+		if not self._caps:
+			self._caps = caps
+			packet = self.prepare_stream_info_packet(caps)
+			self.publisher.put(packet)
+
+			self.post_set_caps(caps)
+
+	def post_set_caps(self, caps):
+		pass
+
+	def prepare_stream_info_packet(self, caps):
+		name = self._basename.append("stream_info")
+
+		co = pyccn.ContentObject(name, self._caps, self._signed_info)
+		co.sign(self._key)
+
+		return co
+
+	def prepare_frame_packet(self, frame, segment):
+		name = self._name_frames.append(frame)
+
+		co = pyccn.ContentObject(name, segment, self._signed_info_frames)
+		co.sign(self._key)
+
+		return co
+
+	def prepare_packet(self, segment, left, data):
+		name = self._name_segments.appendSegment(segment)
+
+		packet = utils.buffer2packet(left, data)
+		co = pyccn.ContentObject(name, packet, self._signed_info)
+		co.sign(self._key)
+
+		return co
+
+	def pre_process_buffer(self, buffer):
+		pass
+
+	def process_buffer(self, buffer):
+		self.pre_process_buffer(buffer)
+
+		chunk_size = self._chunk_size - utils.packet_hdr_len
+		nochunks = int(math.ceil(buffer.size / float(chunk_size)))
+
+		data_off = 0
+		while data_off < buffer.size:
+			assert(nochunks > 0)
+
+			data_size = min(chunk_size, buffer.size - data_off)
+			chunk = buffer.create_sub(data_off, data_size)
+			chunk.stamp(buffer)
+			data_off += data_size
+
+			nochunks -= 1
+			packet = self.prepare_packet(self._segment, nochunks, chunk)
+			self._segment += 1
+
+			self.publisher.put(packet)
+		assert(nochunks == 0)
+
+class CCNDepacketizer(pyccn.Closure):
 	queue = Queue.Queue(10)
 	duration_ns = None
 
@@ -32,7 +97,7 @@ class CCNVideoDepacketizer(pyccn.Closure):
 
 		self._uri = pyccn.Name(uri)
 		self._name_segments = self._uri + 'segments'
-		self._name_frames = self._uri + 'frames'
+		self._name_frames = self._uri + 'index'
 
 		self._pipeline = utils.PipelineFetch(10, self.issue_interest, self.process_response)
 
@@ -48,8 +113,12 @@ class CCNVideoDepacketizer(pyccn.Closure):
 		self._caps = gst.caps_from_string(co.content)
 		debug(self, "Stream caps: %s" % self._caps)
 
-		framerate = self._caps[0]['framerate']
-		self._tc = utils.TCConverter(framerate)
+		self.post_fetch_stream_info(self._caps)
+
+	def post_fetch_stream_info(self, caps):
+		pass
+		#framerate = self._caps[0]['framerate']
+		#self._tc = utils.TCConverter(framerate)
 
 	def get_caps(self):
 		if not self._caps:
@@ -226,175 +295,3 @@ class CCNVideoDepacketizer(pyccn.Closure):
 
 		return pyccn.RESULT_ERR
 
-class VideoSrc(gst.BaseSrc):
-	__gtype_name__ = 'VideoSrc'
-	__gstdetails__ = ("CCN Video Source", "Source/Network",
-		"Receives video data over a CCNx network", "Derek Kulinski <takeda@takeda.tk>")
-
-	__gsttemplates__ = (
-		gst.PadTemplate("src",
-			gst.PAD_SRC,
-			gst.PAD_ALWAYS,
-			gst.caps_new_any()),
-		)
-
-	__gproperties__ = {
-		'location' : (gobject.TYPE_STRING,
-			'CCNx location',
-			'location of the stream in CCNx network',
-			'',
-			gobject.PARAM_READWRITE)
-	}
-
-	depacketizer = None
-
-	def __init__(self):
-		gst.BaseSrc.__init__(self)
-		self.set_format(gst.FORMAT_TIME)
-		self.seek_in_progress = None
-		self._no_locking = False
-
-	def do_set_property(self, property, value):
-		if property.name == 'location':
-			self.depacketizer = CCNVideoDepacketizer(value)
-		else:
-			raise AttributeError, 'unknown property %s' % property.name
-
-	def do_get_caps(self):
-		debug(self, "Called do_get_caps")
-		if self.depacketizer:
-			return self.depacketizer.get_caps()
-		return None
-
-	def do_start(self):
-		debug(self, "Called start")
-		self.depacketizer.start()
-		return True
-
-	def do_stop(self):
-		debug(self, "Called stop")
-		self.depacketizer.stop()
-		return True
-
-	def do_is_seekable(self):
-		debug(self, "is seekable")
-		return True
-
-#	def do_event(self, event):
-#		print "Got event %s" % event.type
-#		return gst.BaseSrc.do_event(self, event)
-
-	def do_create(self, offset, size):
-		if self._no_locking:
-			return gst.FLOW_WRONG_STATE, None
-
-		#debug(self, "Offset: %d, Size: %d" % (offset, size))
-		try:
-			while True:
-				try:
-					status, buffer = self.depacketizer.queue.get(True, 1)
-					#print "%d %d %d %s" % (buffer.timestamp, buffer.duration, buffer.flags, buffer.caps)
-				except Queue.Empty:
-					if self._no_locking:
-						return gst.FLOW_WRONG_STATE, None
-					else:
-						debug(self, "Starving for data")
-						continue
-
-				if self._no_locking:
-					self.depacketizer.queue.task_done()
-					return gst.FLOW_WRONG_STATE, None
-
-				if self.seek_in_progress is not None:
-					if status != CMD_SEEK:
-						debug(self, "Skipping prefetched junk ...")
-						self.depacketizer.queue.task_done()
-						continue
-
-					debug(self, "Pushing seek'd buffer")
-					event = gst.event_new_new_segment(False, 1.0, gst.FORMAT_TIME,
-					                                  self.seek_in_progress, -1,
-					                                  self.seek_in_progress)
-					r = self.get_static_pad("src").push_event(event)
-					debug(self, "Result of announcement of the new segment: %s" % r)
-
-					self.seek_in_progress = None
-					buffer.flag_set(gst.BUFFER_FLAG_DISCONT)
-
-				self.depacketizer.queue.task_done()
-				return gst.FLOW_OK, buffer
-		except:
-			traceback.print_exc()
-			return gst.FLOW_ERROR, None
-
-	def do_do_seek(self, segment):
-		debug(self, "Asked to seek to %d" % segment.start)
-		self.seek_in_progress = segment.start
-		pos = self.depacketizer.seek(segment.start)
-		return True
-
-	def do_query(self, query):
-		if query.type != gst.QUERY_DURATION:
-			return gst.BaseSrc.do_query(self, query)
-
-		duration = self.depacketizer.duration_ns
-
-		if not duration:
-			return True
-
-		query.set_duration(gst.FORMAT_TIME, duration)
-
-		#debug(self, "Returning %s %d" % (query.parse_duration()))
-
-		return True
-
-	def do_check_get_range(self):
-		debug(self, "get range")
-		return False
-
-	def do_unlock(self):
-		debug(self, "Unlock!!!")
-		self._no_locking = True
-		return True
-
-	def do_unlock_stop(self):
-		debug(self, "Stop unlocking!!!")
-		self._no_locking = False
-		return True
-
-gst.element_register(VideoSrc, 'VideoSrc')
-
-if __name__ == '__main__':
-	import sys
-
-	gobject.threads_init()
-
-	if len(sys.argv) != 2:
-		print "Usage: %s <URI>" % sys.argv[0]
-		exit(1)
-
-	uri = sys.argv[1]
-
-	pipeline = gst.parse_launch('h264parse name=parser ! ffdec_h264 name=decoder max-threads=1 skip-frame=5 ! xvimagesink')
-
-	parser = pipeline.get_by_name("parser")
-	decoder = pipeline.get_by_name("decoder")
-	src = gst.element_factory_make("VideoSrc")
-	src.set_property('location', uri)
-
-	pipeline.add(src)
-	src.link(parser)
-
-	loop = gobject.MainLoop()
-
-	pipeline.set_state(gst.STATE_PLAYING)
-	print "Entering loop"
-
-	try:
-		loop.run()
-	except KeyboardInterrupt:
-		print "Ctrl+C pressed, exitting"
-		pass
-
-	pipeline.set_state(gst.STATE_NULL)
-	pipeline.get_state(gst.CLOCK_TIME_NONE)

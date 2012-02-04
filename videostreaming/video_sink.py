@@ -10,87 +10,26 @@ import pyccn
 from pyccn import _pyccn
 
 import utils
+from ElementBase import CCNPacketizer
 
-class CCNVideoPacketizer:
-	_chunk_size = 4096
-	_segment = 0
-	_running = False
-	_caps = None
-
+class CCNVideoPacketizer(CCNPacketizer):
 	_tc = None
 
-	def __init__(self, uri):
-		self._basename = pyccn.Name(uri)
-		self._name_segments = self._basename.append("segments")
-		self._name_frames = self._basename.append("frames")
-
-		self._key = pyccn.CCN.getDefaultKey()
-		self._signed_info = pyccn.SignedInfo(self._key.publicKeyID, pyccn.KeyLocator(self._key))
-		self._signed_info_frames = pyccn.SignedInfo(self._key.publicKeyID, pyccn.KeyLocator(self._key))
-
-		#self.queue = Queue.Queue(20)
+	def __init__(self, repolocation, uri):
 		handle = pyccn.CCN()
-		self.queue = utils.RepoPublisher(handle, '/home/takeda/ccnx/repo', 'video')
+		publisher = utils.RepoPublisher(handle, 'video', repolocation)
+		super(CCNVideoPacketizer, self).__init__(publisher, uri)
 
-	def set_caps(self, caps):
-		if not self._caps:
-			self._caps = caps
-			packet = self.prepare_stream_info_packet(caps)
-			self.queue.put(packet)
+	def post_set_caps(self, caps):
+		framerate = caps[0]['framerate']
+		self._tc = utils.TCConverter(framerate)
 
-			framerate = caps[0]['framerate']
-			self._tc = utils.TCConverter(framerate)
-
-	def prepare_stream_info_packet(self, caps):
-		name = self._basename.append("stream_info")
-
-		co = pyccn.ContentObject(name, self._caps, self._signed_info)
-		co.sign(self._key)
-
-		return co
-
-	def prepare_frame_packet(self, frame, segment):
-		name = self._name_frames.append(frame)
-
-		co = pyccn.ContentObject(name, segment, self._signed_info_frames)
-		co.sign(self._key)
-
-		return co
-
-	def prepare_packet(self, segment, left, data):
-		name = self._name_segments.appendSegment(segment)
-
-		packet = utils.buffer2packet(left, data)
-		co = pyccn.ContentObject(name, packet, self._signed_info)
-		co.sign(self._key)
-
-		return co
-
-	def process_buffer(self, buffer):
+	def pre_process_buffer(self, buffer):
 		if not buffer.flag_is_set(gst.BUFFER_FLAG_DELTA_UNIT):
 			frame = self._tc.ts2tc(buffer.timestamp)
 			print "frame %s" % frame
 			packet = self.prepare_frame_packet(frame, self._segment)
-			self.queue.put(packet)
-
-		chunk_size = self._chunk_size - utils.packet_hdr_len
-		nochunks = int(math.ceil(buffer.size / float(chunk_size)))
-
-		data_off = 0
-		while data_off < buffer.size:
-			assert(nochunks > 0)
-
-			data_size = min(chunk_size, buffer.size - data_off)
-			chunk = buffer.create_sub(data_off, data_size)
-			chunk.stamp(buffer)
-			data_off += data_size
-
-			nochunks -= 1
-			packet = self.prepare_packet(self._segment, nochunks, chunk)
-			self._segment += 1
-
-			self.queue.put(packet)
-		assert(nochunks == 0)
+			self.publisher.put(packet)
 
 class VideoSink(gst.BaseSink):
 	__gtype_name__ = 'VideoSink'
@@ -109,14 +48,31 @@ class VideoSink(gst.BaseSink):
 			'CCNx location',
 			'location of the stream in CCNx network',
 			'',
+			gobject.PARAM_READWRITE),
+		'repolocation' : (gobject.TYPE_STRING,
+			'CCNx repo location',
+			'location of the repo directory within the filesystem',
+			'',
 			gobject.PARAM_READWRITE)
 	}
 
+	pr_location = None
+	pr_repolocation = None
 	packetizer = None
 
 	def do_set_property(self, property, value):
 		if property.name == 'location':
-			self.packetizer = CCNVideoPacketizer(value)
+			self.pr_location = value
+		elif property.name == 'repolocation':
+			self.pr_repolocation = value
+		else:
+			raise AttributeError, 'unknown property %s' % property.name
+
+	def do_get_property(self, property):
+		if property.name == 'location':
+			return self.pr_location
+		elif property.name == 'repolocation':
+			return self.pr_repolocation
 		else:
 			raise AttributeError, 'unknown property %s' % property.name
 
@@ -127,6 +83,11 @@ class VideoSink(gst.BaseSink):
 
 	def do_start(self):
 		print "Starting!"
+		if not self.pr_location:
+			print "No location set"
+			return False
+
+		self.packetizer = CCNVideoPacketizer(self.get_property('repolocation'), self.pr_location)
 		return True
 
 	def do_stop(self):
@@ -172,18 +133,19 @@ if __name__ == '__main__':
 			pad.link(sink.get_pad('sink'))
 
 	pipeline = gst.parse_launch("autovideosrc ! videorate ! videoscale ! video/x-raw-yuv,width=480,height=360 ! \
-		timeoverlay shaded-background=true ! x264enc name=encoder byte-stream=true bitrate=256 speed-preset=veryfast")
+		timeoverlay shaded-background=true ! x264enc name=encoder byte-stream=true bitrate=256 speed-preset=veryfast ! \
+		VideoSink location=/repo/army")
 	#pipeline = gst.parse_launch("filesrc location=army.mp4 typefind=true ! qtdemux name=demuxer")
 
 	#demuxer = pipeline.get_by_name('demuxer')
 	#demuxer.connect('pad-added', on_dynamic_pad)
 
-	sink = gst.element_factory_make("VideoSink")
-	sink.set_property('location', '/repo/army')
-	pipeline.add(sink)
+	#sink = gst.element_factory_make("VideoSink")
+	#sink.set_property('location', '/repo/army')
+	#pipeline.add(sink)
 
-	encoder = pipeline.get_by_name('encoder')
-	encoder.link(sink)
+	#encoder = pipeline.get_by_name('encoder')
+	#encoder.link(sink)
 
 	loop = gobject.MainLoop()
 	pipeline.set_state(gst.STATE_PLAYING)
