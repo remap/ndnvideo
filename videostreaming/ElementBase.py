@@ -1,7 +1,17 @@
-import math, Queue
+import pygst
+pygst.require("0.10")
+import gst
+import gobject
+
+import math, Queue, threading
 import pyccn
 
 import utils
+
+CMD_SEEK = 1
+
+def debug(cls, text):
+	print "%s: %s" % (cls.__class__.__name__, text)
 
 class CCNPacketizer(object):
 	_chunk_size = 4096
@@ -86,7 +96,6 @@ class CCNDepacketizer(pyccn.Closure):
 
 	_running = False
 	_caps = None
-	_tc = None
 	_seek_segment = None
 	_duration_last = None
 	_cmd_q = Queue.Queue(2)
@@ -117,8 +126,6 @@ class CCNDepacketizer(pyccn.Closure):
 
 	def post_fetch_stream_info(self, caps):
 		pass
-		#framerate = self._caps[0]['framerate']
-		#self._tc = utils.TCConverter(framerate)
 
 	def get_caps(self):
 		if not self._caps:
@@ -151,13 +158,13 @@ class CCNDepacketizer(pyccn.Closure):
 
 	def run(self):
 		debug(self, "Running ccn loop")
-		self.fetch_last_frame()
+		self.check_duration()
 
 		iter = 0
 		while self._running:
 			if iter > 100:
 				iter = 0
-				self.fetch_last_frame()
+				self.check_duration()
 
 			self._handle.run(100)
 			self.process_commands()
@@ -183,16 +190,23 @@ class CCNDepacketizer(pyccn.Closure):
 		else:
 			raise Exception, "Unknown command: %d" % cmd
 
-	def fetch_seek_query(self, ns):
-		tc = self._tc.ts2tc_obj(ns)
+	def ts2index(self, ts):
+		return str(ts)
 
-		debug(self, "Fetching segment number for %s" % tc)
+	def ts2index_add_1(self, ts):
+		return str(ts + 1)
+
+	def index2ts(self, index):
+		return long(index)
+
+	def fetch_seek_query(self, ns):
+		index = self.ts2index_add_1(ns)
+
+		debug(self, "Fetching segment number before %s" % index)
 
 		interest = pyccn.Interest(childSelector = 1, answerOriginKind = pyccn.AOK_NONE)
 		interest.exclude = pyccn.ExclusionFilter()
-
-		tc.next()
-		interest.exclude.add_name(pyccn.Name([tc.make_timecode()]))
+		interest.exclude.add_name(pyccn.Name([index]))
 		interest.exclude.add_any()
 
 		debug(self, "Sending interest to %s" % self._name_frames)
@@ -200,16 +214,16 @@ class CCNDepacketizer(pyccn.Closure):
 		co = self._get_handle.get(self._name_frames, interest)
 		if not co:
 			debug(self, "No response, most likely frame 00:00:00:00 doesn't exist in the network, assuming it indicates first segment")
-			return "00:00:00:00", 0
-			raise IOError("Unable to fetch frame before %s" % tc)
+			return (0, 0)
+			raise IOError("Unable to fetch frame before %s" % index)
 		debug(self, "Got segment: %s" % co.content)
 
-		tc = co.name[-1]
+		index = co.name[-1]
 		segment = int(co.content)
 
-		return tc, segment
+		return (self.index2ts(index), segment)
 
-	def fetch_last_frame(self):
+	def check_duration(self):
 		interest = pyccn.Interest(childSelector = 1)
 
 		if self._duration_last:
@@ -223,7 +237,7 @@ class CCNDepacketizer(pyccn.Closure):
 
 		print ">%s<" % self._duration_last
 		if self._duration_last:
-			self.duration_ns = self._tc.tc2ts(self._duration_last)
+			self.duration_ns = self.index2ts(self._duration_last)
 		else:
 			self.duration_ns = 0
 
@@ -294,4 +308,3 @@ class CCNDepacketizer(pyccn.Closure):
 		debug(self, "Got unknown kind: %d" % kind)
 
 		return pyccn.RESULT_ERR
-
