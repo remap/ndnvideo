@@ -46,7 +46,7 @@ class VideoSink(gst.BaseSink):
 	__gproperties__ = {
 		'location' : (gobject.TYPE_STRING,
 			'CCNx location',
-			'location of the stream in CCNx network',
+			'location of the video stream in CCNx network',
 			'',
 			gobject.PARAM_READWRITE),
 		'repolocation' : (gobject.TYPE_STRING,
