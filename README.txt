@@ -41,6 +41,10 @@ then you have a local URL based on your device name, you can then play that.
 
 note:  you may need to manually create CCNR_DIRECTORY/import/ directory
 
+pending:
+
+instructions on how to use a file, rather than a capture device, to create a stream
+
 
 Troubleshooting:
 
