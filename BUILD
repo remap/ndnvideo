@@ -24,3 +24,12 @@ python-gst0.10-dev (for gst-python)
 osX
 
 Install gstreamer & plugins view MacPorts
+
+- install all packages that start with gstreamer (e.g. gstreamer-tools,
+  gstreamer-plugins-ffmpg/bad/ugly/good/base) and their dependencies
+- install py27-gstreamer
+- set to use python from MacPorts as default
+- install PyCCN
+
+In play.py change xvimagesink to ximagesink (remove 'v'), this will be fixed later.
+
