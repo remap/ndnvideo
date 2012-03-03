@@ -1,6 +1,6 @@
 README:
 
-this is a video toolkit…  it publishes and plays live video in a segmented stream that also seeks from buffer in repository.
+this is a video toolkit it publishes and plays live video in a segmented stream that also seeks from buffer in repository.
 
 more detailed readme to come; meanwhile this should help the early adopters. 
 
@@ -14,7 +14,7 @@ usage:
 
 local testing:
 
-make sure CCNR_DIRECTORY is set and sourced (recommend ~/.profile)
+make sure CCNR_DIRECTORY is set and sourced (recommend ~/.profile or ~/.ccnx/)
 make sure ccnx & ccnr (your local repo) are running. 
 
 if you have a known working video URI, just type
@@ -25,11 +25,9 @@ if that doesn't work, see 'troubleshooting', below.
 
 if you don't have a working video URI, make one with video_sink:
 
-python video_sink.py
+python video_sink.py [desired URI]
 
-then you have a local URL based on your device name, you can then play that. 
-
-(use ccnexplore to find the URI if needed)
+then you have a URI you can play via above. It auto-selects first video device. 
 
 note:  you may need to manually create CCNR_DIRECTORY/import/ directory
 
