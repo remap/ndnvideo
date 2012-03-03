@@ -68,7 +68,7 @@ class RepoPublisher(pyccn.Closure):
 			repo_loc = os.path.expandvars(dir)
 
 		self.import_loc = os.path.join(repo_loc, "import")
-		self.prefix = prefix
+		self.prefix = "%s_%d" % (prefix, os.getpid())
 
 		self.name = "/%C1.R.af~"
 		self.interest_tpl = pyccn.Interest(scope = 1)

@@ -18,13 +18,14 @@ import gtk
 gtk.gdk.threads_init()
 
 from video_src import VideoSrc
+from audio_src import AudioSrc
 
 class GstPlayer:
 	def __init__(self, videowidget):
 		self.playing = False
 
-		self.player = gst.parse_launch("queue2 name=decoder ring-buffer-max-size=0 ! ffdec_h264 max-threads=3 ! ffmpegcolorspace ! xvimagesink")
-		self.src = gst.element_factory_make("VideoSrc")
+		self.player = gst.parse_launch("queue2 name=decoder ring-buffer-max-size=0 ! ffdec_aac ! tee name=t ! queue ! autoaudiosink t. ! queue ! goom ! colorspace ! xvimagesink")
+		self.src = gst.element_factory_make("AudioSrc")
 		self.player.add(self.src)
 
 #		self.queue = gst.element_factory_make("queue2")
@@ -266,21 +267,21 @@ class PlayerWindow(gtk.Window):
 				self.scale_value_changed_cb)
 
 	def scale_value_changed_cb(self, scale):
-#		self.seek_to = long(scale.get_value() * self.p_duration / 100) # in ns
-		# see seek.c:seek_cb
-		real = long(scale.get_value() * self.p_duration / 100) # in ns
-		gst.debug('value changed, perform seek to %r' % real)
-		self.player.seek(real)
-		# allow for a preroll
-		self.player.get_state(timeout=50*gst.MSECOND) # 50 ms
-
-	def scale_button_release_cb(self, widget, event):
+		self.seek_to = long(scale.get_value() * self.p_duration / 100) # in ns
 #		# see seek.c:seek_cb
-#		real = self.seek_to
+#		real = long(scale.get_value() * self.p_duration / 100) # in ns
 #		gst.debug('value changed, perform seek to %r' % real)
 #		self.player.seek(real)
 #		# allow for a preroll
-#		#self.player.get_state(timeout=50*gst.MSECOND) # 50 ms
+#		self.player.get_state(timeout=50*gst.MSECOND) # 50 ms
+
+	def scale_button_release_cb(self, widget, event):
+		# see seek.c:seek_cb
+		real = self.seek_to
+		gst.debug('value changed, perform seek to %r' % real)
+		self.player.seek(real)
+		# allow for a preroll
+		#self.player.get_state(timeout=50*gst.MSECOND) # 50 ms
 
 		# see seek.cstop_seek
 		widget.disconnect(self.changed_id)

@@ -91,7 +91,7 @@ class CCNPacketizer(object):
 		assert(nochunks == 0)
 
 class CCNDepacketizer(pyccn.Closure):
-	queue = Queue.Queue(10)
+	queue = Queue.Queue(100)
 	duration_ns = None
 
 	_running = False
@@ -108,7 +108,7 @@ class CCNDepacketizer(pyccn.Closure):
 		self._name_segments = self._uri + 'segments'
 		self._name_frames = self._uri + 'index'
 
-		self._pipeline = utils.PipelineFetch(10, self.issue_interest, self.process_response)
+		self._pipeline = utils.PipelineFetch(100, self.issue_interest, self.process_response)
 
 	def fetch_stream_info(self):
 		name = self._uri.append('stream_info')
@@ -235,7 +235,7 @@ class CCNDepacketizer(pyccn.Closure):
 		if co:
 			self._duration_last = co.name[-1]
 
-		print ">%s<" % self._duration_last
+		print ">%s< (%f)" % (self._duration_last, self.index2ts(self._duration_last) / 1000000000.)
 		if self._duration_last:
 			self.duration_ns = self.index2ts(self._duration_last)
 		else:
@@ -244,7 +244,7 @@ class CCNDepacketizer(pyccn.Closure):
 	def issue_interest(self, segment):
 		name = self._name_segments.appendSegment(segment)
 		#debug(self, "Issuing an interest for: %s" % name)
-		interest = pyccn.Interest(interestLifetime=1.0)
+		interest = pyccn.Interest(interestLifetime=2.0)
 		self._handle.expressInterest(name, self, interest)
 
 	def process_response(self, co):

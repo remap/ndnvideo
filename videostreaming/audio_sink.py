@@ -13,16 +13,24 @@ import utils
 from ElementBase import CCNPacketizer
 
 class CCNAudioPacketizer(CCNPacketizer):
+	index_frequency = 2000
+	last_index = None
+
 	def __init__(self, repolocation, uri):
 		handle = pyccn.CCN()
 		publisher = utils.RepoPublisher(handle, 'audio', repolocation)
 		super(CCNAudioPacketizer, self).__init__(publisher, uri)
 
 	def pre_process_buffer(self, buffer):
-		index = buffer.timestamp
-		print "index %s" % index
-		packet = self.prepare_frame_packet(index, self._segment)
+		timestamp = buffer.timestamp
+		if self.last_index is not None and \
+				(timestamp - self.last_index) < self.index_frequency * 1000000:
+			return
+
+		print "index %f" % (timestamp / 1000000000.)
+		packet = self.prepare_frame_packet(pyccn.Name.num2seg(timestamp), self._segment)
 		self.publisher.put(packet)
+		self.last_index = timestamp
 
 class AudioSink(gst.BaseSink):
 	__gtype_name__ = 'AudioSink'
@@ -96,7 +104,7 @@ class AudioSink(gst.BaseSink):
 		return gst.FLOW_OK
 
 	def do_render(self, buffer):
-		print "Buffer timestamp %d %d %d %s" % (buffer.timestamp, buffer.duration, buffer.flags, buffer.caps)
+		#print "Buffer timestamp %d %d %d %s %d" % (buffer.timestamp, buffer.duration, buffer.flags, buffer.caps, len(buffer.data))
 		self.packetizer.process_buffer(buffer)
 		return gst.FLOW_OK
 
