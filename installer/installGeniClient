@@ -1,0 +1,29 @@
+#! /bin/sh
+
+# this installer is run by patrick on his EC2 instances
+# installs headless clients for video streaming from TV1 during geni demo
+
+# install necessary packages here
+sudo apt-get install git autoconf automake libtool
+sudo apt-get install python-dev gstreamer-tools gstreamer0.10-ffmpeg \
+	gstreamer0.10-plugins-base gstreamer0.10-plugins-good gstreamer0.10-plugins-ugly \
+	gstreamer0.10-plugins-bad gstreamer0.10-pulseaudio
+#sudo apt-get install gstreamer0.10-x
+
+git clone -b reorganization git@github.com:remap/PyCCN.git
+git clone git@github.com:remap/ndnvideo.git
+
+cd PyCCN
+sh bootstrap
+./configure
+make
+sudo make install
+cd ..
+
+echo "To stream on headless client you can type:"
+echo "./ccn_launch.py VideoSrc location=<uri> ! ffdec_h264 ! aasink"
+echo "This will render video as ascii in the console, or:"
+echo
+echo "./ccn_launch.py VideoSrc location=<uri> ! progressreport ! fakesink sync=true"
+echo "This will be trying to receive video at normal speed, also printing current position on the screen"
+echo "without sync=true it'll fetch the video stream as fast as it can"
