@@ -3,22 +3,163 @@ pygst.require("0.10")
 import gst
 import gobject
 
-import math, Queue, threading
-import pyccn
+import math, Queue, threading, struct
 
+import pyccn
 import utils
+
+__all__ = ["CCNPacketizer", "CCNDepacketizer"]
+
+# left, offset, element count
+packet_hdr = "!BHB"
+packet_hdr_len = struct.calcsize(packet_hdr)
+
+# size, timestamp, duration
+segment_hdr = "!IQQ"
+segment_hdr_len = struct.calcsize(segment_hdr)
 
 CMD_SEEK = 1
 
 def debug(cls, text):
 	print "%s: %s" % (cls.__class__.__name__, text)
 
-class CCNPacketizer(object):
-	_chunk_size = 4096
-	_segment = 0
-	_caps = None
+class DataSegmenter(object):
+	def __init__(self, callback, max_size = None):
+		global packet_hdr_len
 
+		self._callback = callback
+		self._max_size = None if max_size is None else max_size - packet_hdr_len
+
+		self._packet_content = bytearray()
+		self._packet_elements = 0
+		self._packet_element_off = 0
+		self._packet_lost = False
+
+	@staticmethod
+	def buffer2segment(buffer):
+		global segment_hdr, segment_hdr_len
+
+		return struct.pack(segment_hdr, buffer.size, buffer.timestamp, \
+				buffer.duration) + buffer.data
+
+	@staticmethod
+	def segment2buffer(segment, offset):
+		global segment_hdr, segment_hdr_len
+
+		if len(segment) - offset < segment_hdr_len:
+			return None, offset
+
+		header = bytes(segment[offset:offset + segment_hdr_len])
+		size, timestamp, duration = struct.unpack(segment_hdr, header)
+		start = offset + segment_hdr_len
+		end = offset + segment_hdr_len + size
+
+		if end > len(segment):
+			return None, offset
+
+		buf = gst.Buffer(bytes(segment[start:end]))
+		buf.timestamp, buf.duration = timestamp, duration
+
+		return buf, end
+
+	def process_buffer(self, buffer, start_fresh = False, flush = False):
+		assert self._max_size, "You can't use process_buffer without defining max_size"
+
+		if start_fresh and len(self._packet_content) > 0:
+			self.perform_send_callback(0)
+
+		segment = self.buffer2segment(buffer)
+		self._packet_content.extend(segment)
+		self._packet_elements += 1
+
+		nochunks = int(math.ceil(len(self._packet_content) \
+				/ float(self._max_size)))
+
+		while nochunks >= 2:
+			#assert(nochunks > 0)
+			packet_size = min(self._max_size, len(self._packet_content))
+			nochunks -= 1
+			self.perform_send_callback(nochunks, packet_size)
+		assert(nochunks == 1)
+
+		if len(self._packet_content) == self._max_size or flush:
+			self.perform_send_callback(0)
+
+	def process_buffer_split(self, buffer):
+		global packet_hdr
+
+		segment = self.buffer2segment(buffer)
+		segment_size = len(segment)
+
+		nochunks = int(math.ceil(segment_size / float(self._max_size)))
+
+		data_off = 0
+		while data_off < segment_size:
+			assert(nochunks > 0)
+
+			data_size = min(self._max_size, segment_size - data_off)
+			chunk = segment[data_off:data_off + data_size]
+			data_off += data_size
+
+			nochunks -= 1
+			header = struct.pack(packet_hdr, nochunks, 0, 0)
+			self._callback(header + chunk)
+		assert(nochunks == 0)
+
+	def packet_lost(self):
+		self._packet_lost = True
+		self._packet_content = bytearray()
+		self._packet_elements = 0
+
+	def process_packet(self, packet):
+		global packet_hdr, packet_hdr_len
+
+		header = packet[:packet_hdr_len]
+		left, offset, count = struct.unpack(packet_hdr, header)
+
+		if not self._packet_lost or len(self._packet_content) > 0:
+			offset = 0
+
+		offset += packet_hdr_len
+		self._packet_content.extend(packet[offset:])
+		self._packet_elements += count
+
+		off = 0
+		while self._packet_elements > 0:
+			buf, off = self.segment2buffer(self._packet_content, off)
+
+			if buf is None:
+				break
+
+			if self._packet_lost:
+				buf.flag_set(gst.BUFFER_FLAG_DISCONT)
+				self._packet_lost = False
+
+			self._callback(buf)
+			self._packet_elements -= 1
+		assert (left > 0 and self._packet_elements == 1) or self._packet_elements == 0, "left = %d, packet_elements = %d" % (left, self._packet_elements)
+		#assert self._packet_elements <= 1, "packet_elements %d" % self._packet_elements
+
+		self._packet_content = self._packet_content[off:]
+
+	def perform_send_callback(self, left, size = None):
+		if size is None:
+			size = len(self._packet_content)
+
+		header = struct.pack(packet_hdr, left, self._packet_element_off, \
+				self._packet_elements)
+
+		self._callback(header + bytes(self._packet_content[:size]))
+		self._packet_content = self._packet_content[size:]
+		self._packet_element_off = len(self._packet_content)
+		self._packet_elements = 0
+
+class CCNPacketizer(object):
 	def __init__(self, publisher, uri):
+		self._chunk_size = 4096
+		self._segment = 0
+		self._caps = None
+
 		self.publisher = publisher
 
 		self._basename = pyccn.Name(uri)
@@ -28,6 +169,8 @@ class CCNPacketizer(object):
 		self._key = pyccn.CCN.getDefaultKey()
 		self._signed_info = pyccn.SignedInfo(self._key.publicKeyID, pyccn.KeyLocator(self._key))
 		self._signed_info_frames = pyccn.SignedInfo(self._key.publicKeyID, pyccn.KeyLocator(self._key))
+
+		self.segmenter = DataSegmenter(self.send_data, self._chunk_size)
 
 	def set_caps(self, caps):
 		if not self._caps:
@@ -56,51 +199,33 @@ class CCNPacketizer(object):
 
 		return co
 
-	def prepare_packet(self, segment, left, data):
-		name = self._name_segments.appendSegment(segment)
+	def send_data(self, packet):
+		name = self._name_segments.appendSegment(self._segment)
+		self._segment += 1
 
-		packet = utils.buffer2packet(left, data)
 		co = pyccn.ContentObject(name, packet, self._signed_info)
 		co.sign(self._key)
-
-		return co
+		self.publisher.put(co)
 
 	def pre_process_buffer(self, buffer):
-		pass
+		return True, True
 
 	def process_buffer(self, buffer):
-		self.pre_process_buffer(buffer)
-
-		chunk_size = self._chunk_size - utils.packet_hdr_len
-		nochunks = int(math.ceil(buffer.size / float(chunk_size)))
-
-		data_off = 0
-		while data_off < buffer.size:
-			assert(nochunks > 0)
-
-			data_size = min(chunk_size, buffer.size - data_off)
-			chunk = buffer.create_sub(data_off, data_size)
-			chunk.stamp(buffer)
-			data_off += data_size
-
-			nochunks -= 1
-			packet = self.prepare_packet(self._segment, nochunks, chunk)
-			self._segment += 1
-
-			self.publisher.put(packet)
-		assert(nochunks == 0)
+		result = self.pre_process_buffer(buffer)
+		self.segmenter.process_buffer(buffer, start_fresh = result[0],
+				flush = result[1])
 
 class CCNDepacketizer(pyccn.Closure):
-	queue = Queue.Queue(100)
-	duration_ns = None
-
-	_running = False
-	_caps = None
-	_seek_segment = None
-	_duration_last = None
-	_cmd_q = Queue.Queue(2)
-
 	def __init__(self, uri):
+		self.queue = Queue.Queue(100)
+		self.duration_ns = None
+
+		self._running = False
+		self._caps = None
+		self._seek_segment = None
+		self._duration_last = None
+		self._cmd_q = Queue.Queue(2)
+
 		self._handle = pyccn.CCN()
 		self._get_handle = pyccn.CCN()
 
@@ -109,6 +234,7 @@ class CCNDepacketizer(pyccn.Closure):
 		self._name_frames = self._uri + 'index'
 
 		self._pipeline = utils.PipelineFetch(100, self.issue_interest, self.process_response)
+		self.segmenter = DataSegmenter(self.push_data)
 
 	def fetch_stream_info(self):
 		name = self._uri.append('stream_info')
@@ -184,7 +310,7 @@ class CCNDepacketizer(pyccn.Closure):
 			tc, segment = self.fetch_seek_query(cmd[1])
 			debug(self, "Seeking to segment %d [%s]" % (segment, tc))
 			self._seek_segment = True
-			self._upcall_segbuf = []
+			self.segmenter.packet_lost()
 			self._pipeline.reset(segment)
 			self._cmd_q.task_done()
 		else:
@@ -244,48 +370,32 @@ class CCNDepacketizer(pyccn.Closure):
 	def issue_interest(self, segment):
 		name = self._name_segments.appendSegment(segment)
 		#debug(self, "Issuing an interest for: %s" % name)
-		interest = pyccn.Interest(interestLifetime=2.0)
+		interest = pyccn.Interest(interestLifetime = 2.0)
 		self._handle.expressInterest(name, self, interest)
 
 	def process_response(self, co):
-		if not hasattr(self, '_upcall_segbuf'):
-			self._upcall_segbuf = []
-
 		if not co:
-			self._upcall_timeout = True
+			self.segmenter.packet_lost()
 			return
 
-		last, content, timestamp, duration = utils.packet2buffer(co.content)
-		#debug(self, "Received %s (left: %d)" % (co.name, last))
+		self.segmenter.process_packet(co.content)
 
-		self._upcall_segbuf.append(content)
+	def push_data(self, buf):
+		status = 0
 
-		if last == 0:
-			status = 0
+		# Marking jump due to seeking
+		if self._seek_segment == True:
+			debug(self, "Marking as discontinued")
+			status = CMD_SEEK
+			self._seek_segment = None
 
-			res = gst.Buffer(b''.join(self._upcall_segbuf))
-			res.timestamp = timestamp
-			res.duration = duration
-			#res.caps = self._caps
-			self._upcall_segbuf = []
-
-			if hasattr(self, '_upcall_timeout') and self._upcall_timeout:
-				self._upcall_timeout = False
-				res.flag_set(gst.BUFFER_FLAG_DISCONT)
-
-			# Marking jump due to seeking
-			if self._seek_segment == True:
-				debug(self, "Marking as discontinued")
-				status = CMD_SEEK
-				self._seek_segment = None
-
-			while True:
-				try:
-					self.queue.put((status, res), True, 1)
+		while True:
+			try:
+				self.queue.put((status, buf), True, 1)
+				break
+			except Queue.Full:
+				if not self._running:
 					break
-				except Queue.Full:
-					if not self._running:
-						break
 
 	def upcall(self, kind, info):
 		if not self._running:
@@ -295,7 +405,8 @@ class CCNDepacketizer(pyccn.Closure):
 			return pyccn.RESULT_OK
 
 		elif kind == pyccn.UPCALL_CONTENT:
-			self._pipeline.put(utils.seg2num(info.ContentObject.name[-1]), info.ContentObject)
+			self._pipeline.put(utils.seg2num(info.ContentObject.name[-1]),
+							info.ContentObject)
 			return pyccn.RESULT_OK
 
 		elif kind == pyccn.UPCALL_INTEREST_TIMED_OUT:

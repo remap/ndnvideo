@@ -18,12 +18,13 @@ import gtk
 gtk.gdk.threads_init()
 
 from video_src import VideoSrc
+from audio_src import AudioSrc
 
 class GstPlayer:
 	def __init__(self, videowidget):
 		self.playing = False
 
-		self.player = gst.parse_launch("queue2 name=decoder ring-buffer-max-size=0 ! ffdec_h264 max-threads=3 ! ffmpegcolorspace ! xvimagesink")
+		self.player = gst.parse_launch("queue2 name=decoder ring-buffer-max-size=0 ! ffdec_h264 max-threads=3 ! ffmpegcolorspace ! queue ! xvimagesink AudioSrc location=/audio ! ffdec_aac ! queue ! autoaudiosink")
 		self.src = gst.element_factory_make("VideoSrc")
 		self.player.add(self.src)
 

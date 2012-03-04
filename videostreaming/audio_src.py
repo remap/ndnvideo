@@ -8,7 +8,6 @@ import gobject
 import Queue, traceback
 import pyccn
 
-import utils
 from ElementBase import CCNDepacketizer
 
 CMD_SEEK = 1
@@ -170,19 +169,12 @@ if __name__ == '__main__':
 	gobject.threads_init()
 
 	if len(sys.argv) != 2:
-		print "Usage: %s <URI>" % sys.argv[0]
-		exit(1)
+		print "Usage: %s <uri>" % sys.argv[0]
+		sys.exit(1)
 
 	uri = sys.argv[1]
 
-	pipeline = gst.parse_launch('ffdec_aac name=decoder ! autoaudiosink')
-
-	decoder = pipeline.get_by_name("decoder")
-	src = gst.element_factory_make("AudioSrc")
-	src.set_property('location', uri)
-
-	pipeline.add(src)
-	src.link(decoder)
+	pipeline = gst.parse_launch('AudioSrc location=%s ! ffdec_mp3 ! autoaudiosink' % uri)
 
 	loop = gobject.MainLoop()
 

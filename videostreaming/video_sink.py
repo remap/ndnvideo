@@ -1,11 +1,10 @@
 #! /usr/bin/env python
-import sys
 import pygst
 pygst.require("0.10")
 import gst
 import gobject
 
-import Queue, traceback, math, threading, os
+import Queue, traceback, math, threading, os, sys
 import pyccn
 from pyccn import _pyccn
 
@@ -13,9 +12,9 @@ import utils
 from ElementBase import CCNPacketizer
 
 class CCNVideoPacketizer(CCNPacketizer):
-	_tc = None
-
 	def __init__(self, repolocation, uri):
+		self._tc = None
+
 		handle = pyccn.CCN()
 		publisher = utils.RepoPublisher(handle, 'video', repolocation)
 		super(CCNVideoPacketizer, self).__init__(publisher, uri)
@@ -30,6 +29,8 @@ class CCNVideoPacketizer(CCNPacketizer):
 			print "frame %s" % frame
 			packet = self.prepare_frame_packet(frame, self._segment)
 			self.publisher.put(packet)
+			return True, False
+		return False, False
 
 class VideoSink(gst.BaseSink):
 	__gtype_name__ = 'VideoSink'
@@ -124,36 +125,23 @@ class VideoSink(gst.BaseSink):
 
 gst.element_register(VideoSink, 'VideoSink')
 
-
-def usage():
-	print("Usage: %s <stream publish URI>" % sys.argv[0])
-	sys.exit(1)
-
 if __name__ == '__main__':
+	gobject.threads_init()
+
+	def usage():
+		print("Usage: %s <uri>" % sys.argv[0])
+		sys.exit(1)
+
 	if (len(sys.argv) != 2):
 		usage()
-	uri=sys.argv[1]
-	gobject.threads_init()
-	
-	def on_dynamic_pad(demux, pad):
-		print "on_dynamic_pad called! %s" % (pad.get_name())
-		if pad.get_name() == "video_00":
-			pad.link(sink.get_pad('sink'))
 
-	pipeline = gst.parse_launch("autovideosrc ! videorate ! videoscale ! video/x-raw-yuv,width=480,height=360 ! \
-		timeoverlay shaded-background=true ! x264enc name=encoder byte-stream=true bitrate=256 speed-preset=veryfast ! \
-		VideoSink location="+uri)
-	#pipeline = gst.parse_launch("filesrc location=army.mp4 typefind=true ! qtdemux name=demuxer")
+	uri = sys.argv[1]
 
-	#demuxer = pipeline.get_by_name('demuxer')
-	#demuxer.connect('pad-added', on_dynamic_pad)
-
-	#sink = gst.element_factory_make("VideoSink")
-	#sink.set_property('location', '/repo/army')
-	#pipeline.add(sink)
-
-	#encoder = pipeline.get_by_name('encoder')
-	#encoder.link(sink)
+	pipeline = gst.parse_launch("autovideosrc ! videorate ! \
+		videoscale ! video/x-raw-yuv,width=320,height=240 ! \
+		timeoverlay shaded-background=true ! \
+		x264enc name=encoder byte-stream=true bitrate=128 speed-preset=veryfast ! \
+		VideoSink location=%s" % uri)
 
 	loop = gobject.MainLoop()
 	pipeline.set_state(gst.STATE_PLAYING)
@@ -161,7 +149,7 @@ if __name__ == '__main__':
 	try:
 		loop.run()
 	except KeyboardInterrupt:
-		print "Ctrl+C pressed, exitting"
+		print "Ctrl+C pressed, exiting"
 		pass
 
 	pipeline.set_state(gst.STATE_NULL)

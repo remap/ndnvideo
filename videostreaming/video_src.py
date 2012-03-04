@@ -178,20 +178,12 @@ if __name__ == '__main__':
 	gobject.threads_init()
 
 	if len(sys.argv) != 2:
-		print "Usage: %s <URI>" % sys.argv[0]
+		print "Usage: %s <uri>" % sys.argv[0]
 		exit(1)
 
 	uri = sys.argv[1]
 
-	pipeline = gst.parse_launch('h264parse name=parser ! ffdec_h264 name=decoder max-threads=1 skip-frame=5 ! xvimagesink')
-
-	parser = pipeline.get_by_name("parser")
-	decoder = pipeline.get_by_name("decoder")
-	src = gst.element_factory_make("VideoSrc")
-	src.set_property('location', uri)
-
-	pipeline.add(src)
-	src.link(parser)
+	pipeline = gst.parse_launch('VideoSrc location=%s ! ffdec_h264 max-threads=3 ! xvimagesink' % uri)
 
 	loop = gobject.MainLoop()
 
@@ -201,7 +193,7 @@ if __name__ == '__main__':
 	try:
 		loop.run()
 	except KeyboardInterrupt:
-		print "Ctrl+C pressed, exitting"
+		print "Ctrl+C pressed, exiting"
 		pass
 
 	pipeline.set_state(gst.STATE_NULL)

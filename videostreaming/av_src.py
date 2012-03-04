@@ -11,22 +11,24 @@ from audio_src import AudioSrc
 from video_src import VideoSrc
 
 if __name__ == '__main__':
+	import sys
+
 	gobject.threads_init()
 
-	pipeline = gst.parse_launch("queue name=vdecoder ! ffdec_h264 max-threads=3 skip-frame=5 ! autovideosink \
-		queue name=adecoder ! ffdec_aac ! autoaudiosink")
+	def usage():
+		print "Usage: %s <uri>" % sys.argv[0]
+		sys.exit(1)
 
-	vdecoder = pipeline.get_by_name("vdecoder")
-	adecoder = pipeline.get_by_name("adecoder")
+	if len(sys.argv) != 2:
+		usage()
 
-	video = gst.element_factory_make("VideoSrc")
-	audio = gst.element_factory_make("AudioSrc")
-	video.set_property('location', '/repo/army/video')
-	audio.set_property('location', '/repo/army/audio')
+	uri = sys.argv[1]
+	audio_uri = "%s/audio" % uri
+	video_uri = "%s/video" % uri
 
-	pipeline.add(video, audio)
-	video.link(vdecoder)
-	audio.link(adecoder)
+	pipeline = gst.parse_launch("VideoSrc location=%s ! \
+		ffdec_h264 max-threads=3 skip-frame=5 ! autovideosink \
+		AudioSrc location=%s ! ffdec_mp3 ! autoaudiosink" % (video_uri, audio_uri))
 
 	loop = gobject.MainLoop()
 	pipeline.set_state(gst.STATE_PLAYING)

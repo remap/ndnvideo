@@ -8,8 +8,12 @@ import pyccn
 from pyccn import _pyccn
 from pytimecode import PyTimeCode
 
-packet_hdr = "!IQQ"
-packet_hdr_len = struct.calcsize(packet_hdr)
+def read_file(fname):
+	f = open(fname, "rb")
+	data = f.read()
+	f.close()
+
+	return data
 
 def seg2num(segment):
 	return long(struct.unpack("!Q", (8 - len(segment)) * "\x00" + segment)[0])
@@ -25,19 +29,6 @@ def packet(name, data, key):
 
 def signed(val):
 	return struct.unpack("=q", struct.pack("=Q", long(val)))[0]
-
-def buffer2packet(left, buffer):
-	global packet_hdr
-	return struct.pack(packet_hdr, left, buffer.timestamp, buffer.duration) + buffer.data
-
-def packet2buffer(packet):
-	global packet_hdr, packet_hdr_len
-
-	hdr = packet[:packet_hdr_len]
-	left, timestamp, duration = struct.unpack(packet_hdr, hdr)
-	buf = bytes(packet[packet_hdr_len:])
-
-	return left, buf, timestamp, duration
 
 def framerate2str(framerate):
 	if framerate.num == 30 and framerate.denom == 1:
@@ -155,7 +146,7 @@ class CCNBuffer(Queue.Queue):
 
 		return ret
 
-	def put(self, item, block=True, timeout=None):
+	def put(self, item, block = True, timeout = None):
 		"""Put an item into the queue.
 
 		If optional args 'block' is true and 'timeout' is None (the default),
@@ -191,7 +182,7 @@ class CCNBuffer(Queue.Queue):
 		finally:
 			self.not_full.release()
 
-	def get_element(self, interest, block=True, timeout=None):
+	def get_element(self, interest, block = True, timeout = None):
 		"""Remove and return an item from the queue.
 
 		If optional args 'block' is true and 'timeout' is None (the default),
@@ -299,7 +290,7 @@ class FlowController(pyccn.Closure):
 #			return pyccn.RESULT_OK
 
 		try:
-			co = self.queue.get_element(info.Interest, timeout=0.2)
+			co = self.queue.get_element(info.Interest, timeout = 0.2)
 		except Queue.Empty:
 			co = None
 
@@ -315,7 +306,7 @@ class FlowController(pyccn.Closure):
 		return pyccn.RESULT_INTEREST_CONSUMED
 
 class VersionedPull(pyccn.Closure):
-	def __init__(self, base_name, callback, handle=None, version=None, latest=True):
+	def __init__(self, base_name, callback, handle = None, version = None, latest = True):
 		if not handle:
 			handle = pyccn.CCN()
 
@@ -332,7 +323,7 @@ class VersionedPull(pyccn.Closure):
 
 	def build_interest(self, latest):
 		if self.start_with_latest:
-			latest=True
+			latest = True
 			self.start_with_latest = False
 
 		excl = pyccn.ExclusionFilter()
@@ -342,12 +333,12 @@ class VersionedPull(pyccn.Closure):
 		excl.add_name(pyccn.Name([self.last_version_marker]))
 		excl.add_any()
 
-		interest = pyccn.Interest(name=self.base_name, exclude=excl, \
-			minSuffixComponents=3, maxSuffixComponents=3)
+		interest = pyccn.Interest(name = self.base_name, exclude = excl, \
+			minSuffixComponents = 3, maxSuffixComponents = 3)
 		interest.childSelector = 1 if latest else 0
 		return interest
 
-	def fetchNext(self, latest=False):
+	def fetchNext(self, latest = False):
 		interest = self.build_interest(latest)
 		co = self.handle.get(interest.name, interest)
 
@@ -357,7 +348,7 @@ class VersionedPull(pyccn.Closure):
 
 		return co
 
-	def requestNext(self, latest=False):
+	def requestNext(self, latest = False):
 		interest = self.build_interest(latest)
 		self.handle.expressInterest(interest.name, self, interest)
 
@@ -468,7 +459,7 @@ if __name__ == '__main__':
 		return co
 
 	def make_interest(name):
-		return Interest.Interest(name=pyccn.Name(name))
+		return Interest.Interest(name = pyccn.Name(name))
 
 	key = pyccn.CCN.getDefaultKey()
 

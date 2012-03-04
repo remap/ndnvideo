@@ -5,7 +5,7 @@ pygst.require("0.10")
 import gst
 import gobject
 
-import Queue, traceback, math, threading, os
+import Queue, traceback, math, threading, os, sys
 import pyccn
 from pyccn import _pyccn
 
@@ -14,9 +14,10 @@ from ElementBase import CCNPacketizer
 
 class CCNAudioPacketizer(CCNPacketizer):
 	index_frequency = 2000
-	last_index = None
 
 	def __init__(self, repolocation, uri):
+		self.last_index = None
+
 		handle = pyccn.CCN()
 		publisher = utils.RepoPublisher(handle, 'audio', repolocation)
 		super(CCNAudioPacketizer, self).__init__(publisher, uri)
@@ -25,12 +26,13 @@ class CCNAudioPacketizer(CCNPacketizer):
 		timestamp = buffer.timestamp
 		if self.last_index is not None and \
 				(timestamp - self.last_index) < self.index_frequency * 1000000:
-			return
+			return False, False
 
 		print "index %f" % (timestamp / 1000000000.)
 		packet = self.prepare_frame_packet(pyccn.Name.num2seg(timestamp), self._segment)
 		self.publisher.put(packet)
 		self.last_index = timestamp
+		return True, False
 
 class AudioSink(gst.BaseSink):
 	__gtype_name__ = 'AudioSink'
@@ -126,25 +128,17 @@ class AudioSink(gst.BaseSink):
 gst.element_register(AudioSink, 'AudioSink')
 
 if __name__ == '__main__':
+	def usage():
+		print "Usage: %s <uri>" % sys.argv[0]
+		sys.exit(1)
+
 	gobject.threads_init()
 
-	def on_dynamic_pad(demux, pad):
-		print "on_dynamic_pad called! %s" % (pad.get_name())
-		if pad.get_name() == "audio_00":
-			pad.link(sink.get_pad('sink'))
+	if len(sys.argv) != 2:
+		usage()
+	uri = sys.argv[1]
 
-	#pipeline = gst.parse_launch("autovideosrc ! videorate ! videoscale ! video/x-raw-yuv,width=480,height=360 ! timeoverlay shaded-background=true ! x264enc name=encoder byte-stream=true bitrate=256 speed-preset=veryfast")
-	#pipeline = gst.parse_launch("filesrc location=army.mp4 typefind=true ! qtdemux name=demuxer")
-	pipeline = gst.parse_launch("pulsesrc ! ffenc_aac name=encoder")
-	encoder = pipeline.get_by_name('encoder')
-
-	#demuxer = pipeline.get_by_name('demuxer')
-	#demuxer.connect('pad-added', on_dynamic_pad)
-
-	sink = gst.element_factory_make("AudioSink")
-	pipeline.add(sink)
-	sink.set_property('location', '/repo/audio1')
-	encoder.link(sink)
+	pipeline = gst.parse_launch("autoaudiosrc ! lamemp3enc bitrate=96 ! AudioSink location=%s" % uri)
 
 	loop = gobject.MainLoop()
 	pipeline.set_state(gst.STATE_PLAYING)
@@ -153,13 +147,12 @@ if __name__ == '__main__':
 		try:
 			loop.run()
 		except KeyboardInterrupt:
-			print "Ctrl+C pressed, exitting"
-			eos = gst.event_new_eos()
-			pipeline.send_event(eos)
-			continue
+			print "Ctrl+C pressed, exiting"
+			#eos = gst.event_new_eos()
+			#pipeline.send_event(eos)
+			#continue
 
 		break
 
 	pipeline.set_state(gst.STATE_NULL)
 	pipeline.get_state(gst.CLOCK_TIME_NONE)
-
