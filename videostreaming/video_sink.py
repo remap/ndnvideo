@@ -132,7 +132,7 @@ def usage():
 if __name__ == '__main__':
 	if (len(sys.argv) != 2):
 		usage()
-	uri=argv[1]
+	uri=sys.argv[1]
 	gobject.threads_init()
 	
 	def on_dynamic_pad(demux, pad):
