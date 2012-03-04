@@ -130,7 +130,7 @@ def usage():
 	sys.exit(1)
 
 if __name__ == '__main__':
-	if (len(sys.argv) != 1):
+	if (len(sys.argv) != 2):
 		usage()
 	uri=argv[1]
 	gobject.threads_init()
