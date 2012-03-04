@@ -124,9 +124,17 @@ class VideoSink(gst.BaseSink):
 
 gst.element_register(VideoSink, 'VideoSink')
 
-if __name__ == '__main__':
-	gobject.threads_init()
 
+def usage():
+	print("Usage: %s <stream publish URI>" % sys.argv[0])
+	sys.exit(1)
+
+if __name__ == '__main__':
+	if (len(sys.argv) != 1):
+		usage()
+	uri=argv[1]
+	gobject.threads_init()
+	
 	def on_dynamic_pad(demux, pad):
 		print "on_dynamic_pad called! %s" % (pad.get_name())
 		if pad.get_name() == "video_00":
@@ -134,7 +142,7 @@ if __name__ == '__main__':
 
 	pipeline = gst.parse_launch("autovideosrc ! videorate ! videoscale ! video/x-raw-yuv,width=480,height=360 ! \
 		timeoverlay shaded-background=true ! x264enc name=encoder byte-stream=true bitrate=256 speed-preset=veryfast ! \
-		VideoSink location=/repo/army")
+		VideoSink location="+uri)
 	#pipeline = gst.parse_launch("filesrc location=army.mp4 typefind=true ! qtdemux name=demuxer")
 
 	#demuxer = pipeline.get_by_name('demuxer')
