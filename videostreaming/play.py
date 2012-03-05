@@ -6,6 +6,7 @@ import pygtk
 pygtk.require('2.0')
 
 import sys
+import os
 
 import gobject
 gobject.threads_init()
@@ -20,27 +21,24 @@ gtk.gdk.threads_init()
 from video_src import VideoSrc
 from audio_src import AudioSrc
 
-class GstPlayer:
+class GstPlayer(gobject.GObject):
+	__gsignals__ = { 'fill-status-changed': (gobject.SIGNAL_RUN_FIRST,
+		 gobject.TYPE_NONE, (float,)) }
+
 	def __init__(self, videowidget):
+		gobject.GObject.__init__(self)
 		self.playing = False
 
-		self.player = gst.parse_launch("queue2 name=decoder ring-buffer-max-size=0 ! ffdec_h264 max-threads=3 ! ffmpegcolorspace ! queue ! xvimagesink AudioSrc location=/audio ! ffdec_aac ! queue ! autoaudiosink")
-		self.src = gst.element_factory_make("VideoSrc")
-		self.player.add(self.src)
-
-#		self.queue = gst.element_factory_make("queue2")
-#		#self.queue.set_property('use-buffering', True)
-#		self.decoder = gst.element_factory_make("ffdec_h264")
-#		#self.decoder.set_property('skip-frame', 5)
-#		self.decoder.set_property('max-threads', 3)
-#		self.convert = gst.element_factory_make("ffmpegcolorspace")
-#		self.sink = gst.element_factory_make("xvimagesink")
-#
-#		self.player = gst.Pipeline()
-#		self.player.add_many(self.src, self.decoder, self.convert, self.sink)
-#
-#		#self.player = gst.parse_launch("CCNSrc ! ffdec_h264 ! xvimagesink")
-#		#self.player = gst.element_factory_make("playbin", "player")
+#		self.player = gst.parse_launch("queue2 use-buffering=true max-size-buffers=0 max-size-bytes=0 max-size-time=10000000000 name=video_input ! ffdec_h264 max-threads=3 ! queue ! ffmpegcolorspace ! xvimagesink \
+#				queue2 use-buffering=true max-size-buffers=0 max-size-bytes=0 max-size-time=10000000000 name=audio_input ! flump3dec ! queue ! autoaudiosink")
+		self.player = gst.parse_launch("identity name=video_input ! \
+				multiqueue use-buffering=true max-size-buffers=0 max-size-bytes=0 max-size-time=10000000000 name=queue ! \
+				ffdec_h264 max-threads=3 ! queue ! colorspace ! xvimagesink \
+				identity name=audio_input ! queue. queue. ! ffdec_mp3 ! queue ! autoaudiosink")
+		self.vsrc = gst.element_factory_make("VideoSrc")
+		self.asrc = gst.element_factory_make("AudioSrc")
+		self.player.add(self.vsrc)
+		self.player.add(self.asrc)
 
 		self.videowidget = videowidget
 		self.on_eos = False
@@ -50,6 +48,17 @@ class GstPlayer:
 		bus.add_signal_watch()
 		bus.connect('sync-message::element', self.on_sync_message)
 		bus.connect('message', self.on_message)
+
+		# activate media download
+		self._temp_location = None
+		self.started_buffering = False
+		self.fill_timeout_id = 0
+		#self.player.props.flags |= 0x80
+		self.player.connect("deep-notify::temp-location", self.on_temp_location)
+
+	@gobject.property
+	def download_filename(self):
+		return self._temp_location
 
 	def on_sync_message(self, bus, message):
 		if message.structure is None:
@@ -75,18 +84,49 @@ class GstPlayer:
 			if self.on_eos:
 				self.on_eos()
 			self.playing = False
+		elif t == gst.MESSAGE_BUFFERING:
+			self.process_buffering_stats(message)
+
+	def process_buffering_stats(self, message):
+		print "Buffering percent %d, %r" % (message.parse_buffering(), message.parse_buffering_stats())
+		if not self.started_buffering:
+			print "Starting buffering"
+			self.started_buffering = True
+			if self.fill_timeout_id:
+				gobject.source_remove(self.fill_timeout_id)
+			self.fill_timeout_id = gobject.timeout_add(200,
+					self.buffering_timeout)
+
+	def buffering_timeout(self):
+		print "timeout"
+		query = gst.query_new_buffering(gst.FORMAT_PERCENT)
+		if self.player.query(query):
+			fmt, start, stop, total = query.parse_buffering_range()
+			if stop != -1:
+				fill_status = stop / 10000.
+			else:
+				fill_status = 100.
+
+			self.emit("fill-status-changed", fill_status)
+
+			if fill_status == 100.:
+				# notify::download_filename value
+				self.notify("download_filename")
+				return False
+		return True
+
+	def on_temp_location(self, playbin, queue, prop):
+		self._temp_location = queue.props.temp_location
 
 	def set_location(self, location):
 		print "%s >%s<" % (type(location), location)
-		self.src.set_property('location', location)
+		self.vsrc.set_property('location', "%s/video" % location)
+		self.asrc.set_property('location', "%s/audio" % location)
 
-		decoder = self.player.get_by_name('decoder')
-		self.src.link(decoder)
-#		self.src.set_property('location', location)
-#		self.src.link(self.decoder)
-#		#self.queue.link(self.decoder)
-#		self.decoder.link(self.convert)
-#		self.convert.link(self.sink)
+		video_input = self.player.get_by_name('video_input')
+		audio_input = self.player.get_by_name('audio_input')
+		self.vsrc.link(video_input)
+		self.asrc.link(audio_input)
 
 	def query_position(self):
 		"Returns a (position, duration) tuple"
@@ -132,6 +172,12 @@ class GstPlayer:
 	def stop(self):
 		self.player.set_state(gst.STATE_NULL)
 		gst.info("stopped player")
+		if self._temp_location:
+			try:
+				os.unlink(self._temp_location)
+			except OSError:
+				pass
+			self._temp_location = ''
 
 	def get_state(self, timeout=1):
 		return self.player.get_state(timeout=timeout)
@@ -166,6 +212,7 @@ class PlayerWindow(gtk.Window):
 		self.create_ui()
 
 		self.player = GstPlayer(self.videowidget)
+		self.player.connect("fill-status-changed", self._fill_status_changed)
 
 		def on_eos():
 			self.player.seek(0L)
@@ -234,7 +281,7 @@ class PlayerWindow(gtk.Window):
 			self.player.play()
 			if self.update_id == -1:
 				self.update_id = gobject.timeout_add(self.UPDATE_INTERVAL,
-				                                     self.update_scale_cb)
+													 self.update_scale_cb)
 			self.button.add(self.pause_image)
 
 	def scale_format_value_cb(self, scale, value):
@@ -267,21 +314,21 @@ class PlayerWindow(gtk.Window):
 				self.scale_value_changed_cb)
 
 	def scale_value_changed_cb(self, scale):
-#		self.seek_to = long(scale.get_value() * self.p_duration / 100) # in ns
-		# see seek.c:seek_cb
-		real = long(scale.get_value() * self.p_duration / 100) # in ns
-		gst.debug('value changed, perform seek to %r' % real)
-		self.player.seek(real)
-		# allow for a preroll
-		self.player.get_state(timeout=50*gst.MSECOND) # 50 ms
-
-	def scale_button_release_cb(self, widget, event):
+		self.seek_to = long(scale.get_value() * self.p_duration / 100) # in ns
 #		# see seek.c:seek_cb
-#		real = self.seek_to
+#		real = long(scale.get_value() * self.p_duration / 100) # in ns
 #		gst.debug('value changed, perform seek to %r' % real)
 #		self.player.seek(real)
 #		# allow for a preroll
-#		#self.player.get_state(timeout=50*gst.MSECOND) # 50 ms
+#		self.player.get_state(timeout=50*gst.MSECOND) # 50 ms
+
+	def scale_button_release_cb(self, widget, event):
+		# see seek.c:seek_cb
+		real = self.seek_to
+		gst.debug('value changed, perform seek to %r' % real)
+		self.player.seek(real)
+		# allow for a preroll
+		#self.player.get_state(timeout=50*gst.MSECOND) # 50 ms
 
 		# see seek.cstop_seek
 		widget.disconnect(self.changed_id)
@@ -309,6 +356,10 @@ class PlayerWindow(gtk.Window):
 			self.adjustment.set_value(value)
 
 		return True
+
+	def _fill_status_changed(self, player, fill_value):
+		self.hscale.set_fill_level(fill_value)
+		self.hscale.set_show_fill_level(True)
 
 def main(args):
 	def usage():

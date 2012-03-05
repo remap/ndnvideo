@@ -235,6 +235,7 @@ class CCNDepacketizer(pyccn.Closure):
 
 		self._pipeline = utils.PipelineFetch(100, self.issue_interest, self.process_response)
 		self.segmenter = DataSegmenter(self.push_data)
+		self._tmp_retries = {}
 
 	def fetch_stream_info(self):
 		name = self._uri.append('stream_info')
@@ -370,8 +371,9 @@ class CCNDepacketizer(pyccn.Closure):
 	def issue_interest(self, segment):
 		name = self._name_segments.appendSegment(segment)
 		#debug(self, "Issuing an interest for: %s" % name)
-		interest = pyccn.Interest(interestLifetime = 2.0)
+		interest = pyccn.Interest(interestLifetime = 1.0)
 		self._handle.expressInterest(name, self, interest)
+		self._tmp_retries[str(name[-1])] = 2
 
 	def process_response(self, co):
 		if not co:
@@ -410,6 +412,11 @@ class CCNDepacketizer(pyccn.Closure):
 			return pyccn.RESULT_OK
 
 		elif kind == pyccn.UPCALL_INTEREST_TIMED_OUT:
+			if self._tmp_retries[str(info.Interest.name[-1])]:
+				self._tmp_retries[str(info.Interest.name[-1])] -= 1
+				debug(self, "timeout - reexpressing")
+				return pyccn.RESULT_REEXPRESS
+			del self._tmp_retries[str(info.Interest.name[-1])]
 			debug(self, "timeout, skipping")
 			self._pipeline.put(utils.seg2num(info.Interest.name[-1]), None)
 			return pyccn.RESULT_OK

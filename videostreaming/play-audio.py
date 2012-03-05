@@ -24,7 +24,7 @@ class GstPlayer:
 	def __init__(self, videowidget):
 		self.playing = False
 
-		self.player = gst.parse_launch("queue2 name=decoder ring-buffer-max-size=0 ! ffdec_aac ! tee name=t ! queue ! autoaudiosink t. ! queue ! goom ! colorspace ! xvimagesink")
+		self.player = gst.parse_launch("queue2 name=decoder ring-buffer-max-size=0 ! ffdec_mp3 ! tee name=t ! queue ! autoaudiosink t. ! queue ! goom ! colorspace ! xvimagesink")
 		self.src = gst.element_factory_make("AudioSrc")
 		self.player.add(self.src)
 
