@@ -21,6 +21,8 @@ gtk.gdk.threads_init()
 from video_src import VideoSrc
 from audio_src import AudioSrc
 
+import platform
+
 class GstPlayer(gobject.GObject):
 	__gsignals__ = { 'fill-status-changed': (gobject.SIGNAL_RUN_FIRST,
 		 gobject.TYPE_NONE, (float,)) }
@@ -29,9 +31,15 @@ class GstPlayer(gobject.GObject):
 		gobject.GObject.__init__(self)
 		self.playing = False
 
+		if(platform.system() == "Darwin"):
+			self.player = gst.parse_launch("identity name=video_input ! \
+				multiqueue use-buffering=true max-size-buffers=0 max-size-bytes=0 max-size-time=10000000000 name=queue ! \
+				ffdec_h264 max-threads=3 ! queue ! colorspace ! ximagesink \
+				identity name=audio_input ! queue. queue. ! ffdec_mp3 ! audioconvert ! osxaudiosink")
+		else:
 #		self.player = gst.parse_launch("queue2 use-buffering=true max-size-buffers=0 max-size-bytes=0 max-size-time=10000000000 name=video_input ! ffdec_h264 max-threads=3 ! queue ! ffmpegcolorspace ! xvimagesink \
 #				queue2 use-buffering=true max-size-buffers=0 max-size-bytes=0 max-size-time=10000000000 name=audio_input ! flump3dec ! queue ! autoaudiosink")
-		self.player = gst.parse_launch("identity name=video_input ! \
+			self.player = gst.parse_launch("identity name=video_input ! \
 				multiqueue use-buffering=true max-size-buffers=0 max-size-bytes=0 max-size-time=10000000000 name=queue ! \
 				ffdec_h264 max-threads=3 ! queue ! colorspace ! xvimagesink \
 				identity name=audio_input ! queue. queue. ! ffdec_mp3 ! queue ! autoaudiosink")

@@ -20,11 +20,15 @@ gtk.gdk.threads_init()
 from video_src import VideoSrc
 from audio_src import AudioSrc
 
+import platform
+
 class GstPlayer:
 	def __init__(self, videowidget):
 		self.playing = False
-
-		self.player = gst.parse_launch("queue2 name=decoder ring-buffer-max-size=0 ! ffdec_mp3 ! tee name=t ! queue ! autoaudiosink t. ! queue ! goom ! colorspace ! xvimagesink")
+		if(platform.system() == "Darwin"):
+			self.player = gst.parse_launch("queue2 name=decoder ring-buffer-max-size=0 ! ffdec_mp3 ! tee name=t ! queue ! autoaudiosink t. ! queue ! goom ! colorspace ! ximagesink")
+		else:
+			self.player = gst.parse_launch("queue2 name=decoder ring-buffer-max-size=0 ! ffdec_mp3 ! tee name=t ! queue ! autoaudiosink t. ! queue ! goom ! colorspace ! xvimagesink")
 		self.src = gst.element_factory_make("AudioSrc")
 		self.player.add(self.src)
 
