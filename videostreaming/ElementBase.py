@@ -217,7 +217,7 @@ class CCNPacketizer(object):
 
 class CCNDepacketizer(pyccn.Closure):
 	def __init__(self, uri):
-		self.queue = Queue.Queue(100)
+		self.queue = Queue.Queue(25)
 		self.duration_ns = None
 
 		self._running = False
@@ -233,7 +233,7 @@ class CCNDepacketizer(pyccn.Closure):
 		self._name_segments = self._uri + 'segments'
 		self._name_frames = self._uri + 'index'
 
-		self._pipeline = utils.PipelineFetch(100, self.issue_interest, self.process_response)
+		self._pipeline = utils.PipelineFetch(25, self.issue_interest, self.process_response)
 		self.segmenter = DataSegmenter(self.push_data)
 		self._tmp_retries = {}
 
@@ -362,7 +362,7 @@ class CCNDepacketizer(pyccn.Closure):
 		if co:
 			self._duration_last = co.name[-1]
 
-		print ">%s< (%f)" % (self._duration_last, self.index2ts(self._duration_last) / 1000000000.)
+		print ">%r< (%f)" % (self._duration_last, self.index2ts(self._duration_last) / 1000000000.)
 		if self._duration_last:
 			self.duration_ns = self.index2ts(self._duration_last)
 		else:

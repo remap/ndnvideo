@@ -45,10 +45,10 @@ class AudioSrc(gst.BaseSrc):
 			gobject.PARAM_READWRITE)
 	}
 
-	depacketizer = None
 
 	def __init__(self):
 		gst.BaseSrc.__init__(self)
+		self.depacketizer = None
 		self.set_format(gst.FORMAT_TIME)
 		self.seek_in_progress = None
 		self._no_locking = False

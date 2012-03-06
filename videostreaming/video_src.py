@@ -17,7 +17,9 @@ def debug(cls, text):
 	print "%s: %s" % (cls.__class__.__name__, text)
 
 class CCNVideoDepacketizer(CCNDepacketizer):
-	_tc = None
+	def __init__(self, uri):
+		CCNDepacketizer(self, uri)
+		self._tc = None
 
 	def post_fetch_stream_info(self, caps):
 		framerate = caps[0]['framerate']
@@ -54,10 +56,9 @@ class VideoSrc(gst.BaseSrc):
 			gobject.PARAM_READWRITE)
 	}
 
-	depacketizer = None
-
 	def __init__(self):
 		gst.BaseSrc.__init__(self)
+		self.depacketizer = None
 		self.set_format(gst.FORMAT_TIME)
 		self.seek_in_progress = None
 		self._no_locking = False

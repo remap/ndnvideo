@@ -2,11 +2,18 @@ import pygst
 pygst.require('0.10')
 import gst
 
-import struct, time, Queue, bisect, threading, math, os
+import struct, time, Queue, bisect, threading, math, os, platform
 from operator import itemgetter
 import pyccn
 from pyccn import _pyccn
 from pytimecode import PyTimeCode
+
+if platform.system() == "Darwin":
+	audio_sink = "audioonvert ! osxaudiosink"
+	video_sink = "colorspace ! ximagesink"
+else:
+	audio_sink = "autoaudiosink"
+	video_sink = "xvimagesink"
 
 def read_file(fname):
 	f = open(fname, "rb")

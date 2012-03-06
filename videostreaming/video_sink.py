@@ -57,9 +57,11 @@ class VideoSink(gst.BaseSink):
 			gobject.PARAM_READWRITE)
 	}
 
-	pr_location = None
-	pr_repolocation = None
-	packetizer = None
+	def __init__(self):
+		gst.BaseSink.__init__(self)
+		self.pr_location = None
+		self.pr_repolocation = None
+		self.packetizer = None
 
 	def do_set_property(self, property, value):
 		if property.name == 'location':
