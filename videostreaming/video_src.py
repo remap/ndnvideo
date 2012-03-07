@@ -18,7 +18,7 @@ def debug(cls, text):
 
 class CCNVideoDepacketizer(CCNDepacketizer):
 	def __init__(self, uri):
-		CCNDepacketizer(self, uri)
+		CCNDepacketizer.__init__(self, uri)
 		self._tc = None
 
 	def post_fetch_stream_info(self, caps):
@@ -90,7 +90,10 @@ class VideoSrc(gst.BaseSrc):
 		return True
 
 #	def do_event(self, event):
-#		print "Got event %s" % event.type
+#		if event.type == gst.EVENT_QOS:
+#			print "QOS: proportion: %f diff: %d timestamp: %d" % event.parse_qos()
+#		else:
+#			print "Got event %s" % event.type
 #		return gst.BaseSrc.do_event(self, event)
 
 	def do_create(self, offset, size):
