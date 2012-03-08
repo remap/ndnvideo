@@ -67,7 +67,7 @@ class RepoPublisher(pyccn.Closure):
 			repo_loc = os.path.expandvars(dir)
 
 		self.import_loc = os.path.join(repo_loc, "import")
-		self.prefix = "%s_%d_%d_" % (prefix, os.getpid(), random.randrange(2**64))
+		self.prefix = "%s_%d_%d_" % (prefix, os.getpid(), random.randrange(2 ** 64))
 
 		self.name = "/%C1.R.af~"
 		self.interest_tpl = pyccn.Interest(scope = 1)
@@ -373,33 +373,65 @@ class VersionedPull(pyccn.Closure):
 
 		return pyccn.RESULT_OK
 
-class PipelineFetch():
+class PipelineFetch(object):
+	increase_every = 1
+
 	def __init__(self, window, request_cb, receive_cb):
 		self.window = window
 		self.request_cb = request_cb
 		self.receive_cb = receive_cb
 
 	def reset(self, position = 0):
+		"""resets pipeline to specified segment and (re)starts pipelining"""
+
 		self._buf = {}
 		self._position = position
 		self._requested = position - 1
-		self.request_data()
+		self._counter = 0
+
+		self._request_more_data()
 
 	def put(self, number, data):
+		"""places received data packet in the buffer"""
+
 		if number < self._position:
 			print "%d < %d - dropping" % (number, self._position)
 		else:
 			self._buf[str(number)] = data
-		self.push_out()
+		self._push_out_data()
 
-	def request_data(self):
+	def timeout(self, number):
+		"""signals pipeline to skip given packet and move to next one"""
+
+		self.put(number, None)
+
+	def get_position(self):
+		if not hasattr(self, '_position'):
+			return -1
+
+		return self._position
+
+	def get_pipeline_size(self):
+		"""returns current number of elements in pipeline"""
+
+		if not hasattr(self, '_position'):
+			return 0
+
+		return self._requested - self._position + 1
+
+	def _request_more_data(self):
+		interests_left = 2 if self._counter == 0 else 1
+		self._counter = (self._counter + 1) % self.increase_every
+
 		stop = self._position + self.window - 1
-		while self._requested < stop:
+		while self._requested < stop and interests_left > 0:
 			self._requested += 1
+			interests_left -= 1
 			if not self.request_cb(self._requested):
 				return
+		#print "Pipeline size: %d" % (self._requested - self._position)
 
-	def push_out(self):
+	def _push_out_data(self):
 		while self._buf.has_key(str(self._position)):
 			data = self._buf[str(self._position)]
 			self.receive_cb(data)
@@ -407,7 +439,7 @@ class PipelineFetch():
 			del self._buf[str(self._position)]
 			self._position += 1
 
-		self.request_data()
+		self._request_more_data()
 
 class TCConverter:
 	"""timestamp <--> timecode conversion class"""

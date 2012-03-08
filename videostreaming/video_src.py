@@ -174,6 +174,9 @@ class VideoSrc(gst.BaseSrc):
 		self._no_locking = False
 		return True
 
+	def get_status(self):
+		return self.depacketizer.get_status()
+
 gst.element_register(VideoSrc, 'VideoSrc')
 
 if __name__ == '__main__':

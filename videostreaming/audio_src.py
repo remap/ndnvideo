@@ -55,7 +55,7 @@ class AudioSrc(gst.BaseSrc):
 
 	def do_set_property(self, property, value):
 		if property.name == 'location':
-			self.depacketizer = CCNAudioDepacketizer(value)
+			self.depacketizer = CCNAudioDepacketizer(value, 5)
 		else:
 			raise AttributeError, 'unknown property %s' % property.name
 
@@ -160,6 +160,9 @@ class AudioSrc(gst.BaseSrc):
 		debug(self, "Stop unlocking!!!")
 		self._no_locking = False
 		return True
+
+	def get_status(self):
+		return self.depacketizer.get_status()
 
 gst.element_register(AudioSrc, 'AudioSrc')
 

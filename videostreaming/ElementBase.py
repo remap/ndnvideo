@@ -171,7 +171,7 @@ class CCNPacketizer(object):
 		self._signed_info = pyccn.SignedInfo(self._key.publicKeyID, pyccn.KeyLocator(self._name_key))
 		self._signed_info_frames = pyccn.SignedInfo(self._key.publicKeyID, pyccn.KeyLocator(self._name_key))
 
-		self.segmenter = DataSegmenter(self.send_data, self._chunk_size)
+		self._segmenter = DataSegmenter(self.send_data, self._chunk_size)
 
 		signed_info = pyccn.SignedInfo(self._key.publicKeyID, pyccn.KeyLocator(self._key))
 		co = pyccn.ContentObject(self._name_key, self._key.publicToDER(), signed_info)
@@ -219,12 +219,15 @@ class CCNPacketizer(object):
 
 	def process_buffer(self, buffer):
 		result = self.pre_process_buffer(buffer)
-		self.segmenter.process_buffer(buffer, start_fresh = result[0],
+		self._segmenter.process_buffer(buffer, start_fresh = result[0],
 				flush = result[1])
 
 class CCNDepacketizer(pyccn.Closure):
-	def __init__(self, uri, max_interests = 50):
-		self.queue = Queue.Queue(max_interests)
+	def __init__(self, uri, window = 32, timeout = 0.5, retries = 2):
+		self.interest_lifetime = timeout
+		self.interest_retries = retries
+
+		self.queue = Queue.Queue(window * 2)
 		self.duration_ns = None
 
 		self._running = False
@@ -240,9 +243,17 @@ class CCNDepacketizer(pyccn.Closure):
 		self._name_segments = self._uri + 'segments'
 		self._name_frames = self._uri + 'index'
 
-		self._pipeline = utils.PipelineFetch(max_interests, self.issue_interest, self.process_response)
-		self.segmenter = DataSegmenter(self.push_data)
-		self._tmp_retries = {}
+		self._pipeline = utils.PipelineFetch(window, self.issue_interest,
+				self.process_response)
+		self._segmenter = DataSegmenter(self.push_data)
+
+		self._stats_retries = 0
+		self._stats_drops = 0
+
+		self._tmp_retry_requests = {}
+
+	def set_window(self, window):
+		self._pipeline.window = window
 
 	def fetch_stream_info(self):
 		name = self._uri.append('stream_info')
@@ -318,20 +329,20 @@ class CCNDepacketizer(pyccn.Closure):
 			tc, segment = self.fetch_seek_query(cmd[1])
 			debug(self, "Seeking to segment %d [%s]" % (segment, tc))
 			self._seek_segment = True
-			self.segmenter.packet_lost()
+			self._segmenter.packet_lost()
 			self._pipeline.reset(segment)
 			self._cmd_q.task_done()
 		else:
 			raise Exception, "Unknown command: %d" % cmd
 
 	def ts2index(self, ts):
-		return str(ts)
+		return pyccn.Name.num2seg(ts)
 
 	def ts2index_add_1(self, ts):
-		return str(ts + 1)
+		return self.ts2index(ts + 1)
 
 	def index2ts(self, index):
-		return long(index)
+		return pyccn.Name.seg2num(index)
 
 	def fetch_seek_query(self, ns):
 		index = self.ts2index_add_1(ns)
@@ -345,7 +356,7 @@ class CCNDepacketizer(pyccn.Closure):
 
 		debug(self, "Sending interest to %s" % self._name_frames)
 		debug(self, "Exclusion list %s" % interest.exclude)
-		co = self._get_handle.get(self._name_frames, interest)
+		co = self._get_handle.get(self._name_frames, interest, 10000)
 		if not co:
 			debug(self, "No response, most likely frame 00:00:00:00 doesn't exist in the network, assuming it indicates first segment")
 			return (0, 0)
@@ -379,17 +390,21 @@ class CCNDepacketizer(pyccn.Closure):
 
 	def issue_interest(self, segment):
 		name = self._name_segments.appendSegment(segment)
+
 		#debug(self, "Issuing an interest for: %s" % name)
-		interest = pyccn.Interest(interestLifetime = 1.0)
+		self._tmp_retry_requests[str(name[-1])] = self.interest_retries
+
+		interest = pyccn.Interest(interestLifetime = self.interest_lifetime)
 		self._handle.expressInterest(name, self, interest)
-		self._tmp_retries[str(name[-1])] = 2
+
+		return True
 
 	def process_response(self, co):
 		if not co:
-			self.segmenter.packet_lost()
+			self._segmenter.packet_lost()
 			return
 
-		self.segmenter.process_packet(co.content)
+		self._segmenter.process_packet(co.content)
 
 	def push_data(self, buf):
 		status = 0
@@ -421,16 +436,19 @@ class CCNDepacketizer(pyccn.Closure):
 			return pyccn.RESULT_OK
 
 		elif kind == pyccn.UPCALL_INTEREST_TIMED_OUT:
-			if self._tmp_retries[str(info.Interest.name[-1])]:
-				self._tmp_retries[str(info.Interest.name[-1])] -= 1
-				debug(self, "timeout - reexpressing")
+			name = str(info.Interest.name[-1])
+
+			if self._tmp_retry_requests[name]:
+				#debug(self, "timeout for %s - re-expressing" % info.Interest.name)
+				self._stats_retries += 1
+				self._tmp_retry_requests[name] -= 1
 				return pyccn.RESULT_REEXPRESS
-			del self._tmp_retries[str(info.Interest.name[-1])]
-			debug(self, "timeout, skipping")
-			self._pipeline.put(utils.seg2num(info.Interest.name[-1]), None)
+
+			#debug(self, "timeout for %r - skipping" % name)
+			self._stats_drops += 1
+			del self._tmp_retry_requests[name]
+			self._pipeline.timeout(utils.seg2num(info.Interest.name[-1]))
 			return pyccn.RESULT_OK
-			debug(self, "timeout - reexpressing")
-			return pyccn.RESULT_REEXPRESS
 
 		elif kind == pyccn.UPCALL_CONTENT_UNVERIFIED:
 			debug(self, "%s arrived unverified, fetching the key" % info.ContentObject.name)
@@ -439,3 +457,6 @@ class CCNDepacketizer(pyccn.Closure):
 		debug(self, "Got unknown kind: %d" % kind)
 
 		return pyccn.RESULT_ERR
+
+	def get_status(self):
+		return "Pipeline size: %d/%d Position: %d Retries: %d Drops: %d" % (self._pipeline.get_pipeline_size(), self._pipeline.window, self._pipeline.get_position(), self._stats_retries, self._stats_drops)
