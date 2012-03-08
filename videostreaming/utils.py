@@ -2,7 +2,7 @@ import pygst
 pygst.require('0.10')
 import gst
 
-import struct, time, Queue, bisect, threading, math, os, platform
+import struct, time, Queue, bisect, threading, math, os, platform, random
 from operator import itemgetter
 import pyccn
 from pyccn import _pyccn
@@ -52,9 +52,10 @@ def framerate2str(framerate):
 	return fr_str
 
 class RepoPublisher(pyccn.Closure):
-	_sequence = 0;
 
 	def __init__(self, handle, prefix, repo_loc = None):
+		self._sequence = 0;
+
 		self.handle = handle
 
 		if not repo_loc:
@@ -66,13 +67,13 @@ class RepoPublisher(pyccn.Closure):
 			repo_loc = os.path.expandvars(dir)
 
 		self.import_loc = os.path.join(repo_loc, "import")
-		self.prefix = "%s_%d" % (prefix, os.getpid())
+		self.prefix = "%s_%d_%d_" % (prefix, os.getpid(), random.randrange(2**64))
 
 		self.name = "/%C1.R.af~"
 		self.interest_tpl = pyccn.Interest(scope = 1)
 
 	def put(self, content):
-		name = self.prefix + "_" + str(self._sequence)
+		name = self.prefix + str(self._sequence)
 		self._sequence += 1
 
 		of = open(os.path.join(self.import_loc, name), "wb")
