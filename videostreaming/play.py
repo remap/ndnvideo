@@ -89,9 +89,14 @@ class GstPlayer(gobject.GObject):
 			self.process_buffering_stats(message)
 
 	def process_buffering_stats(self, message):
-		print "Buffering percent %d" % (message.parse_buffering())
+		percent = message.parse_buffering()
+		print "%s: Buffering percent %d" % (message.src.get_name(), percent)
+		if percent < 100:
+			self.pause()
+		else:
+			self.play()
+
 		if not self.started_buffering:
-			print "Starting buffering"
 			self.started_buffering = True
 			if self.fill_timeout_id:
 				gobject.source_remove(self.fill_timeout_id)
@@ -99,7 +104,6 @@ class GstPlayer(gobject.GObject):
 					self.buffering_timeout)
 
 	def buffering_timeout(self):
-		print "timeout"
 		query = gst.query_new_buffering(gst.FORMAT_PERCENT)
 		if self.player.query(query):
 			fmt, start, stop, total = query.parse_buffering_range()
@@ -282,7 +286,7 @@ class PlayerWindow(gtk.Window):
 			self.player.play()
 			if self.update_id == -1:
 				self.update_id = gobject.timeout_add(self.UPDATE_INTERVAL,
-													 self.update_scale_cb)
+				                 self.update_scale_cb)
 			self.button.add(self.pause_image)
 
 	def scale_format_value_cb(self, scale, value):

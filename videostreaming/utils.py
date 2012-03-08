@@ -9,7 +9,7 @@ from pyccn import _pyccn
 from pytimecode import PyTimeCode
 
 if platform.system() == "Darwin":
-	audio_sink = "audioonvert ! osxaudiosink"
+	audio_sink = "audioconvert ! osxaudiosink"
 	video_sink = "colorspace ! ximagesink"
 else:
 	audio_sink = "autoaudiosink"

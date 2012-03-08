@@ -165,16 +165,22 @@ class CCNPacketizer(object):
 		self._basename = pyccn.Name(uri)
 		self._name_segments = self._basename.append("segments")
 		self._name_frames = self._basename.append("index")
+		self._name_key = self._basename.append("key")
 
 		self._key = pyccn.CCN.getDefaultKey()
-		self._signed_info = pyccn.SignedInfo(self._key.publicKeyID, pyccn.KeyLocator(self._key))
-		self._signed_info_frames = pyccn.SignedInfo(self._key.publicKeyID, pyccn.KeyLocator(self._key))
+		self._signed_info = pyccn.SignedInfo(self._key.publicKeyID, pyccn.KeyLocator(self._name_key))
+		self._signed_info_frames = pyccn.SignedInfo(self._key.publicKeyID, pyccn.KeyLocator(self._name_key))
 
 		self.segmenter = DataSegmenter(self.send_data, self._chunk_size)
+
+		co = pyccn.ContentObject(self._name_key, self._key.publicToDER(), self._signed_info)
+		co.sign(self._key)
+		self.publisher.put(co)
 
 	def set_caps(self, caps):
 		if not self._caps:
 			self._caps = caps
+
 			packet = self.prepare_stream_info_packet(caps)
 			self.publisher.put(packet)
 
@@ -216,8 +222,8 @@ class CCNPacketizer(object):
 				flush = result[1])
 
 class CCNDepacketizer(pyccn.Closure):
-	def __init__(self, uri):
-		self.queue = Queue.Queue(25)
+	def __init__(self, uri, max_interests = 50):
+		self.queue = Queue.Queue(max_interests)
 		self.duration_ns = None
 
 		self._running = False
@@ -233,7 +239,7 @@ class CCNDepacketizer(pyccn.Closure):
 		self._name_segments = self._uri + 'segments'
 		self._name_frames = self._uri + 'index'
 
-		self._pipeline = utils.PipelineFetch(25, self.issue_interest, self.process_response)
+		self._pipeline = utils.PipelineFetch(max_interests, self.issue_interest, self.process_response)
 		self.segmenter = DataSegmenter(self.push_data)
 		self._tmp_retries = {}
 
@@ -361,8 +367,10 @@ class CCNDepacketizer(pyccn.Closure):
 		co = self._get_handle.get(self._name_frames, interest, 100)
 		if co:
 			self._duration_last = co.name[-1]
+			debug(self, ">%r< (%f)" % (self._duration_last, self.index2ts(self._duration_last) / 1000000000.))
+		else:
+			debug(self, "No response received for duration request")
 
-		print ">%r< (%f)" % (self._duration_last, self.index2ts(self._duration_last) / 1000000000.)
 		if self._duration_last:
 			self.duration_ns = self.index2ts(self._duration_last)
 		else:
