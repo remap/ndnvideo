@@ -173,7 +173,8 @@ class CCNPacketizer(object):
 
 		self.segmenter = DataSegmenter(self.send_data, self._chunk_size)
 
-		co = pyccn.ContentObject(self._name_key, self._key.publicToDER(), self._signed_info)
+		signed_info = pyccn.SignedInfo(self._key.publicKeyID, pyccn.KeyLocator(self._key))
+		co = pyccn.ContentObject(self._name_key, self._key.publicToDER(), signed_info)
 		co.sign(self._key)
 		self.publisher.put(co)
 
