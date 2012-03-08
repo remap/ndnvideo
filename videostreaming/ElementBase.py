@@ -431,6 +431,10 @@ class CCNDepacketizer(pyccn.Closure):
 			debug(self, "timeout - reexpressing")
 			return pyccn.RESULT_REEXPRESS
 
+		elif kind == pyccn.UPCALL_CONTENT_UNVERIFIED:
+			debug(self, "%s arrived unverified, fetching the key" % info.ContentObject.name)
+			return pyccn.RESULT_VERIFY
+
 		debug(self, "Got unknown kind: %d" % kind)
 
 		return pyccn.RESULT_ERR
