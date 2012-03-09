@@ -17,8 +17,8 @@ def debug(cls, text):
 	print "%s: %s" % (cls.__class__.__name__, text)
 
 class CCNVideoDepacketizer(CCNDepacketizer):
-	def __init__(self, uri):
-		CCNDepacketizer.__init__(self, uri)
+	def __init__(self, uri, window = None, timeout = None):
+		CCNDepacketizer.__init__(self, uri, window, timeout)
 		self._tc = None
 
 	def post_fetch_stream_info(self, caps):
@@ -65,7 +65,7 @@ class VideoSrc(gst.BaseSrc):
 
 	def do_set_property(self, property, value):
 		if property.name == 'location':
-			self.depacketizer = CCNVideoDepacketizer(value)
+			self.depacketizer = CCNVideoDepacketizer(value, 18, 1.0)
 		else:
 			raise AttributeError, 'unknown property %s' % property.name
 

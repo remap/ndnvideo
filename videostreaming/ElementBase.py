@@ -223,8 +223,9 @@ class CCNPacketizer(object):
 				flush = result[1])
 
 class CCNDepacketizer(pyccn.Closure):
-	def __init__(self, uri, window = 32, timeout = 0.5, retries = 2):
-		self.interest_lifetime = timeout
+	def __init__(self, uri, window = None, timeout = 1.0, retries = 2):
+		window = window if window is not None else 1
+		self.interest_lifetime = timeout if timeout is not None else 1.0
 		self.interest_retries = retries
 
 		self.queue = Queue.Queue(window * 2)
@@ -432,7 +433,7 @@ class CCNDepacketizer(pyccn.Closure):
 			return pyccn.RESULT_OK
 
 		elif kind == pyccn.UPCALL_CONTENT:
-			self._pipeline.put(utils.seg2num(info.ContentObject.name[-1]),
+			self._pipeline.put(pyccn.Name.seg2num(info.ContentObject.name[-1]),
 							info.ContentObject)
 			return pyccn.RESULT_OK
 
@@ -448,7 +449,7 @@ class CCNDepacketizer(pyccn.Closure):
 			#debug(self, "timeout for %r - skipping" % name)
 			self._stats_drops += 1
 			del self._tmp_retry_requests[name]
-			self._pipeline.timeout(utils.seg2num(info.Interest.name[-1]))
+			self._pipeline.timeout(pyccn.Name.seg2num(info.Interest.name[-1]))
 			return pyccn.RESULT_OK
 
 		elif kind == pyccn.UPCALL_CONTENT_UNVERIFIED:

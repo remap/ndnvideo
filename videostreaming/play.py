@@ -32,8 +32,10 @@ class GstPlayer(gobject.GObject):
 		gobject.GObject.__init__(self)
 		self.playing = False
 
-		self.player = gst.parse_launch("multiqueue use-buffering=true name=mqueue \
-				identity name=video_input ! mqueue. mqueue. ! ffdec_h264 max-threads=3 ! %s \
+#					max-size-buffers=0 max-size-time=0 max-size-time=2000000000 \
+		self.player = gst.parse_launch("\
+				multiqueue name=mqueue use-buffering=true \
+				identity name=video_input ! mqueue. mqueue. ! ffdec_h264 ! %s \
 				identity name=audio_input ! mqueue. mqueue. ! ffdec_mp3 ! %s" % (utils.video_sink, utils.audio_sink))
 		self.vsrc = gst.element_factory_make("VideoSrc")
 		self.asrc = gst.element_factory_make("AudioSrc")
@@ -101,7 +103,7 @@ class GstPlayer(gobject.GObject):
 		audio_status = self.asrc.get_status()
 		self.emit("status-updated", "Video: %s\n"
 				"Audio: %s\n"
-				"Buffer: %d%% (playing: %s)" % (video_status, audio_status, self.stats_buffering_percent, self.playing))
+				"Buffer: %d%% (playing: %s)" % (video_status, audio_status, self.stats_buffering_percent, "Yes" if self.playing else "No"))
 		return True
 
 	def set_location(self, location):

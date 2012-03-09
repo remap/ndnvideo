@@ -55,7 +55,7 @@ class AudioSrc(gst.BaseSrc):
 
 	def do_set_property(self, property, value):
 		if property.name == 'location':
-			self.depacketizer = CCNAudioDepacketizer(value, 5)
+			self.depacketizer = CCNAudioDepacketizer(value, 3)
 		else:
 			raise AttributeError, 'unknown property %s' % property.name
 

@@ -22,9 +22,6 @@ def read_file(fname):
 
 	return data
 
-def seg2num(segment):
-	return long(struct.unpack("!Q", (8 - len(segment)) * "\x00" + segment)[0])
-
 def packet(name, data, key):
 	co = pyccn.ContentObject()
 	co.name = pyccn.Name(name)
@@ -374,7 +371,7 @@ class VersionedPull(pyccn.Closure):
 		return pyccn.RESULT_OK
 
 class PipelineFetch(object):
-	increase_every = 1
+	increase_every = 10
 
 	def __init__(self, window, request_cb, receive_cb):
 		self.window = window
