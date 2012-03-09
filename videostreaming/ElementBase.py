@@ -349,18 +349,19 @@ class CCNDepacketizer(pyccn.Closure):
 
 		debug(self, "Fetching segment number before %s" % index)
 
-		interest = pyccn.Interest(childSelector = 1, answerOriginKind = pyccn.AOK_NONE)
+		interest = pyccn.Interest(childSelector = 1,
+			answerOriginKind = pyccn.AOK_NONE)
 		interest.exclude = pyccn.ExclusionFilter()
 		interest.exclude.add_name(pyccn.Name([index]))
 		interest.exclude.add_any()
 
 		debug(self, "Sending interest to %s" % self._name_frames)
 		debug(self, "Exclusion list %s" % interest.exclude)
-		co = self._get_handle.get(self._name_frames, interest, 10000)
-		if not co:
-			debug(self, "No response, most likely frame 00:00:00:00 doesn't exist in the network, assuming it indicates first segment")
-			return (0, 0)
-			raise IOError("Unable to fetch frame before %s" % index)
+		while True:
+			co = self._get_handle.get(self._name_frames, interest)
+			if co:
+				break
+			debug(self, "Timeout while seeking %d, retrying ..." % (ns))
 		debug(self, "Got segment: %s" % co.content)
 
 		index = co.name[-1]
