@@ -223,7 +223,7 @@ class CCNPacketizer(object):
 				flush = result[1])
 
 class CCNDepacketizer(pyccn.Closure):
-	def __init__(self, uri, window = None, timeout = 1.0, retries = 2):
+	def __init__(self, uri, window = None, timeout = 1.0, retries = 1):
 		window = window if window is not None else 1
 		self.interest_lifetime = timeout if timeout is not None else 1.0
 		self.interest_retries = retries
@@ -308,11 +308,11 @@ class CCNDepacketizer(pyccn.Closure):
 
 		iter = 0
 		while self._running:
-			if iter > 100:
+			if iter > 5:
 				iter = 0
 				self.check_duration()
 
-			self._handle.run(100)
+			self._handle.run(2000)
 			self.process_commands()
 			iter += 1
 
@@ -348,16 +348,15 @@ class CCNDepacketizer(pyccn.Closure):
 	def fetch_seek_query(self, ns):
 		index = self.ts2index_add_1(ns)
 
-		debug(self, "Fetching segment number before %s" % index)
+		#debug(self, "Fetching segment number before %s" % index)
 
-		interest = pyccn.Interest(childSelector = 1,
-			answerOriginKind = pyccn.AOK_NONE)
+		interest = pyccn.Interest(childSelector = 1)
 		interest.exclude = pyccn.ExclusionFilter()
 		interest.exclude.add_name(pyccn.Name([index]))
 		interest.exclude.add_any()
 
-		debug(self, "Sending interest to %s" % self._name_frames)
-		debug(self, "Exclusion list %s" % interest.exclude)
+		#debug(self, "Sending interest to %s" % self._name_frames)
+		#debug(self, "Exclusion list %s" % interest.exclude)
 		while True:
 			co = self._get_handle.get(self._name_frames, interest)
 			if co:
@@ -371,7 +370,8 @@ class CCNDepacketizer(pyccn.Closure):
 		return (self.index2ts(index), segment)
 
 	def check_duration(self):
-		interest = pyccn.Interest(childSelector = 1)
+		interest = pyccn.Interest(childSelector = 1,
+			answerOriginKind = pyccn.AOK_NONE)
 
 		if self._duration_last:
 			interest.exclude = pyccn.ExclusionFilter()
@@ -381,7 +381,7 @@ class CCNDepacketizer(pyccn.Closure):
 		co = self._get_handle.get(self._name_frames, interest, 100)
 		if co:
 			self._duration_last = co.name[-1]
-			debug(self, ">%r< (%f)" % (self._duration_last, self.index2ts(self._duration_last) / 1000000000.))
+			#debug(self, ">%r< (%f)" % (self._duration_last, self.index2ts(self._duration_last) / 1000000000.))
 		else:
 			debug(self, "No response received for duration request")
 
@@ -461,4 +461,7 @@ class CCNDepacketizer(pyccn.Closure):
 		return pyccn.RESULT_ERR
 
 	def get_status(self):
-		return "Pipeline size: %d/%d Position: %d Retries: %d Drops: %d" % (self._pipeline.get_pipeline_size(), self._pipeline.window, self._pipeline.get_position(), self._stats_retries, self._stats_drops)
+		return "Pipeline size: %d/%d Position: %d Retries: %d Drops: %d Duration: %ds" \
+			% (self._pipeline.get_pipeline_size(), self._pipeline.window,
+			self._pipeline.get_position(), self._stats_retries, self._stats_drops,
+			self.duration_ns / gst.SECOND if self.duration_ns else 1.0)
