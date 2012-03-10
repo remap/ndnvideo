@@ -35,23 +35,23 @@ class GstPlayer(gobject.GObject):
 		#self.player = gst.parse_launch("multiqueue use-buffering=true name=queue \
 		#		identity name=video_input ! queue. queue. ! ffdec_h264 max-threads=3 ! queue ! %s \
 		#		identity name=audio_input ! queue. queue. ! ffdec_mp3 ! queue ! %s" % (utils.video_sink, utils.audio_sink))
-		
-		self.player = gst.parse_launch('multiqueue use-buffering=true name=queue \
-			identity name=video_input ! queue. queue. ! ffdec_h264 max-threads=3 ! queue ! \
-		videomixer name=mix ! ffmpegcolorspace ! ximagesink \
-	   videotestsrc pattern=0 ! video/x-raw-yuv, width=352, height=240 ! \
-	     textoverlay font-desc="Sans 24" text="CAM1" valign=top halign=left shaded-background=true ! \
-	     videobox border-alpha=0 top=0 left=0 ! mix. \
-	   videotestsrc pattern="snow" ! video/x-raw-yuv, width=352, height=240 ! \
-	     textoverlay font-desc="Sans 24" text="CAM2" valign=top halign=left shaded-background=true ! \
-	     videobox border-alpha=0 top=0 left=-358 ! mix. \
-	   videotestsrc pattern=13 ! video/x-raw-yuv, width=352, height=240 ! \
-	     textoverlay font-desc="Sans 24" text="CAM3" valign=top halign=left shaded-background=true ! \
-	     videobox border-alpha=0 top=0 left=-716 ! mix. \
-	   identity name=video_input videotestsrc pattern="snow" ! video/x-raw-yuv, width=704, height=480 ! \
+
+		self.player = gst.parse_launch('videomixer name=mix ! ffmpegcolorspace ! videoscale ! ximagesink \
+		videotestsrc pattern=13 ! video/x-raw-yuv, width=352, height=240 ! \
+		 textoverlay font-desc="Sans 24" text="CAM1" valign=top halign=left shaded-background=true ! \
+		videobox border-alpha=0 top=0 left=0 ! mix. \
+		videotestsrc pattern=13 ! video/x-raw-yuv, width=352, height=240 ! \
+		textoverlay font-desc="Sans 24" text="CAM2" valign=top halign=left shaded-background=true ! \
+		videobox border-alpha=0 top=0 left=-352 ! mix. \
+		videotestsrc pattern=13 ! video/x-raw-yuv, width=352, height=240 ! \
+		textoverlay font-desc="Sans 24" text="CAM3" valign=top halign=left shaded-background=true ! \
+		videobox border-alpha=0 top=-0 left=-704 ! mix. \
+	   identity name=video_input ! ffdec_h264 ! queue ! video/x-raw-yuv, width=704, height=480 ! \
 	     textoverlay font-desc="Sans 12" text="MAIN" valign=top halign=left shaded-background=true ! \
-	     videobox border-alpha=0 top=-246 left=0 ! mix.')
-		
+	     videobox border-alpha=0 top=-240 left=0 ! mix.')
+	
+	# note i removed audio sink just for testing...
+
 
 		'''self.player = gst.parse_launch('multiqueue use-buffering=true name=queue \
 			identity name=video_input ! queue. queue. ! ffdec_h264 max-threads=3 ! queue ! videomixer name=mix ! ffmpegcolorspace ! ximagesink \
@@ -153,10 +153,10 @@ class GstPlayer(gobject.GObject):
 
 	def on_status_update(self):
 		video_status = self.vsrc.get_status()
-		audio_status = self.asrc.get_status()
-		self.emit("status-updated", "Video: %s\n"
-				"Audio: %s\n"
-				"Buffer: %d%% (playing: %s)" % (video_status, audio_status, self.stats_buffering_percent, self.playing))
+		#audio_status = self.asrc.get_status()
+		self.emit("status-updated", "Video: %s\n")
+			#	"Audio: %s\n"
+				#"Buffer: %d%% (playing: %s)" % (video_status, audio_status, self.stats_buffering_percent, self.playing))
 		return True
 
 	def set_location(self, location):
@@ -244,7 +244,7 @@ class PlayerWindow(gtk.Window):
 		gtk.Window.__init__(self)
 		#self.set_default_size(704, 480)
 		# raw video UI is 1069x706 - leaving 31px for UI controls
-		self.set_default_size(1080, 800)
+		self.set_default_size(1024, 768)
 
 		self.create_ui()
 
