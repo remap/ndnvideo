@@ -350,7 +350,8 @@ class CCNDepacketizer(pyccn.Closure):
 
 		#debug(self, "Fetching segment number before %s" % index)
 
-		interest = pyccn.Interest(childSelector = 1)
+		interest = pyccn.Interest(childSelector = 1,
+			answerOriginKind = pyccn.AOK_NONE)
 		interest.exclude = pyccn.ExclusionFilter()
 		interest.exclude.add_name(pyccn.Name([index]))
 		interest.exclude.add_any()
