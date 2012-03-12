@@ -388,7 +388,7 @@ def main(args):
 	import pyccn
 	h = pyccn.CCN()
 	n = pyccn.Name(args[1])
-	i = pyccn.Interest(childSelector=1)
+	i = pyccn.Interest(childSelector=1, answerOriginKind=pyccn.AOK_NONE)
 	co = h.get(n,i)
 	del h
 	del i
