@@ -385,7 +385,16 @@ def main(args):
 	if len(args) != 2:
 		usage()
 
-	w.load_file(args[1])
+	import pyccn
+	h = pyccn.CCN()
+	n = pyccn.Name(args[1])
+	i = pyccn.Interest(childSelector=1)
+	co = h.get(n,i)
+	del h
+	del i
+	n = n + str(co.name[len(n)]) + "mainvideo"
+
+	w.load_file(str(n))
 	w.show_all()
 
 	gtk.main()
