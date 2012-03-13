@@ -189,7 +189,7 @@ class PlayerWindow(gtk.Window):
 
 	def __init__(self):
 		gtk.Window.__init__(self)
-		self.set_default_size(704, 480)
+		self.set_default_size(670, 580)
 
 		self.create_ui()
 
