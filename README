@@ -1,6 +1,6 @@
 README:
 
-this is a video toolkit it publishes and plays live video in a segmented stream that also seeks from buffer in repository.
+this is a video toolkit it publishes and plays live video in a segmented stream that also seeks from buffer in CCNx repo.
 
 more detailed readme to come; meanwhile this should help the early adopters. 
 
@@ -12,24 +12,31 @@ installing:
 
 usage:
 
-local testing:
+playing remote stream:
 
-make sure CCNR_DIRECTORY is set and sourced (recommend ~/.profile or ~/.ccnx/)
-make sure ccnx & ccnr (your local repo) are running. 
+make sure ccnd is running, and has a route to a testbed node.
 
-if you have a known working video URI, just type
 
-python play.py [URI]
+./play.py /ndn/ucla.edu/apps/video
+
 
 if that doesn't work, see 'troubleshooting', below. 
+
+
+publishing local video:
+
+make sure CCNR_DIRECTORY is set and sourced (recommend ~/.profile or ~/.ccnx/)
+make sure ccnd & ccnr (your local repo) are running, and are routed (for others to access)
 
 if you don't have a working video URI, make one with video_sink:
 
 python video_sink.py [desired URI]
 
-then you have a URI you can play via above. It auto-selects first video device. 
+then you have a URI you can play via above. It auto-selects first video device.
+
 
 note:  you may need to manually create CCNR_DIRECTORY/import/ directory
+
 
 pending:
 
@@ -49,16 +56,14 @@ gst-launch -v -m autovideosrc ! xvimagesink
 
 if this doesn't work, try 
 xvinfo
-if you don't have any adapters… you'll need a better video card and driver!
+if you don't have any adapters… you'll need a better video card and driver - in which case you can likely use ximagesink.
 
-you may be able to get by with ximagesink, however you may need to videoscale to specific supported size listed by:
+however you may need to videoscale to specific supported size listed by: 
+
 gst-inspect ximagesink
 
-if video is of wrong size you might need to
-            use videoscale to scale it to right resolution.
 
-
-./ccn_launch.py VideoSrc location=/ndn/ucla.edu/apps/hydra/video ! \
+./ccn_launch.py VideoSrc location=/ndn/ucla.edu/apps/video/hydra/ ! \
    ffdec_h264 ! aasink
 
 (this will render video using ascii :)
