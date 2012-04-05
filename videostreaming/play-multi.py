@@ -35,23 +35,24 @@ class GstPlayer(gobject.GObject):
 		#self.player = gst.parse_launch("multiqueue use-buffering=true name=queue \
 		#		identity name=video_input ! queue. queue. ! ffdec_h264 max-threads=3 ! queue ! %s \
 		#		identity name=audio_input ! queue. queue. ! ffdec_mp3 ! queue ! %s" % (utils.video_sink, utils.audio_sink))
-		
-		self.player = gst.parse_launch('multiqueue use-buffering=true name=queue \
-			identity name=video_input ! queue. queue. ! ffdec_h264 max-threads=3 ! queue ! \
-		videomixer name=mix ! ffmpegcolorspace ! ximagesink \
-	   videotestsrc pattern=0 ! video/x-raw-yuv, width=352, height=240 ! \
-	     textoverlay font-desc="Sans 24" text="CAM1" valign=top halign=left shaded-background=true ! \
-	     videobox border-alpha=0 top=0 left=0 ! mix. \
-	   videotestsrc pattern="snow" ! video/x-raw-yuv, width=352, height=240 ! \
-	     textoverlay font-desc="Sans 24" text="CAM2" valign=top halign=left shaded-background=true ! \
-	     videobox border-alpha=0 top=0 left=-358 ! mix. \
-	   videotestsrc pattern=13 ! video/x-raw-yuv, width=352, height=240 ! \
-	     textoverlay font-desc="Sans 24" text="CAM3" valign=top halign=left shaded-background=true ! \
-	     videobox border-alpha=0 top=0 left=-716 ! mix. \
-	   identity name=video_input videotestsrc pattern="snow" ! video/x-raw-yuv, width=704, height=480 ! \
+
+		self.player = gst.parse_launch('videomixer name=mix ! ffmpegcolorspace ! videoscale ! ximagesink \
+	   identity name=video_input_1 ! ffdec_h264 ! queue ! video/x-raw-yuv, width=352, height=240 ! \
+		 textoverlay font-desc="Sans 24" text="CAM1" valign=top halign=left shaded-background=true ! \
+		videobox border-alpha=0 top=0 left=0 ! mix. \
+	   identity name=video_input_2 ! ffdec_h264 ! queue ! video/x-raw-yuv, width=352, height=240 ! \
+		textoverlay font-desc="Sans 24" text="CAM2" valign=top halign=left shaded-background=true ! \
+		videobox border-alpha=0 top=0 left=-352 ! mix. \
+	   identity name=video_input_3 ! ffdec_h264 ! queue ! video/x-raw-yuv, width=352, height=240 ! \
+		textoverlay font-desc="Sans 24" text="CAM3" valign=top halign=left shaded-background=true ! \
+		videobox border-alpha=0 top=-0 left=-704 ! mix. \
+	   identity name=video_input_main ! ffdec_h264 ! queue ! video/x-raw-yuv, width=704, height=480 ! \
 	     textoverlay font-desc="Sans 12" text="MAIN" valign=top halign=left shaded-background=true ! \
-	     videobox border-alpha=0 top=-246 left=0 ! mix.')
-		
+	     videobox border-alpha=0 top=-240 left=0 ! mix.	\
+		 identity name=audio_input ! ffdec_mp3 ! queue ! audioconvert ! osxaudiosink');
+	
+	# note i removed audio sink just for testing...
+
 
 		'''self.player = gst.parse_launch('multiqueue use-buffering=true name=queue \
 			identity name=video_input ! queue. queue. ! ffdec_h264 max-threads=3 ! queue ! videomixer name=mix ! ffmpegcolorspace ! ximagesink \
@@ -90,10 +91,16 @@ class GstPlayer(gobject.GObject):
 		#self.player = gst.parse_launch(" \
 		#		identity name=video_input ! ffdec_h264 max-threads=3 ! queue ! %s \
 		#		identity name=audio_input ! ffdec_mp3 ! queue ! %s" % (utils.video_sink, utils.audio_sink))
-		self.vsrc = gst.element_factory_make("VideoSrc")
-		#self.asrc = gst.element_factory_make("AudioSrc")
-		self.player.add(self.vsrc)
-		#self.player.add(self.asrc)
+		self.vsrc_main = gst.element_factory_make("VideoSrc")
+		self.vsrc_1 = gst.element_factory_make("VideoSrc")
+		self.vsrc_2 = gst.element_factory_make("VideoSrc")
+		self.vsrc_3 = gst.element_factory_make("VideoSrc")
+		self.asrc = gst.element_factory_make("AudioSrc")
+		self.player.add(self.vsrc_main)
+		self.player.add(self.vsrc_1)
+		self.player.add(self.vsrc_2)
+		self.player.add(self.vsrc_3)
+		self.player.add(self.asrc)
 
 		self.videowidget = videowidget
 		self.on_eos = False
@@ -112,12 +119,21 @@ class GstPlayer(gobject.GObject):
 	def on_sync_message(self, bus, message):
 		if message.structure is None:
 			return
-
+		if message.structure.has_key("nsview"):
+			print "NSVIEW !!!"
+			print message.structure["nsview"]
 		if message.structure.get_name() == 'prepare-xwindow-id':
+            if sys.platform == "darwin": 
+                #print self.movie_window.window.nsview 
+				print self.window.nsview
+                win_id = self.window.nsview
+            else: 
+                win_id = self.window.xid 
 			# Sync with the X server before giving the X-id to the sink
 			gtk.gdk.threads_enter()
 			gtk.gdk.display_get_default().sync()
-			self.videowidget.set_sink(message.src)
+			#self.videowidget.set_sink(message.src)
+			self.sink.set_xwindow_id(win_id) 
 			message.src.set_property('force-aspect-ratio', True)
 			gtk.gdk.threads_leave()
 
@@ -152,7 +168,7 @@ class GstPlayer(gobject.GObject):
 				self.play()
 
 	def on_status_update(self):
-		video_status = self.vsrc.get_status()
+		video_status = self.vsrc_main.get_status()
 		audio_status = self.asrc.get_status()
 		self.emit("status-updated", "Video: %s\n"
 				"Audio: %s\n"
@@ -160,13 +176,30 @@ class GstPlayer(gobject.GObject):
 		return True
 
 	def set_location(self, location):
-		self.vsrc.set_property('location', "%s/video" % location)
-		#self.asrc.set_property('location', "%s/audio" % location)
+		self.vsrc_main.set_property('location', "%s/mainvideo/video" % location)
+		self.vsrc_1.set_property('location', "%s/video1" % location)
+		self.vsrc_2.set_property('location', "%s/video2" % location)
+		self.vsrc_3.set_property('location', "%s/video3" % location)
+			
+		self.asrc.set_property('location', "%s/mainvideo/audio" % location)
 
-		video_input = self.player.get_by_name('video_input')
-		#audio_input = self.player.get_by_name('audio_input')
-		self.vsrc.link(video_input)
-		#self.asrc.link(audio_input)
+		video_input_main = self.player.get_by_name('video_input_main')
+		video_input_1 = self.player.get_by_name('video_input_1')
+		video_input_2 = self.player.get_by_name('video_input_2')
+		video_input_3 = self.player.get_by_name('video_input_3')
+		audio_input = self.player.get_by_name('audio_input')
+		self.vsrc_main.link(video_input_main)
+		self.vsrc_1.link(video_input_1)
+		self.vsrc_2.link(video_input_2)
+		self.vsrc_3.link(video_input_3)
+		self.asrc.link(audio_input)
+		
+		#video_input = self.player.get_by_name('video_input')
+		#self.vsrc.link(video_input)
+	def determine_duration(self):
+		self.pause()
+		self.asrc.depacketizer.check_duration()
+		self.asrc.depacketizer.check_duration()	
 
 	def query_position(self):
 		"Returns a (position, duration) tuple"
@@ -235,7 +268,7 @@ class VideoWidget(gtk.DrawingArea):
 	def set_sink(self, sink):
 		assert self.window.xid
 		self.imagesink = sink
-		self.imagesink.set_xwindow_id(self.window.xid)
+		self.imagesink.set_xwindow_id(win_id)
 
 class PlayerWindow(gtk.Window):
 	UPDATE_INTERVAL = 500
@@ -244,7 +277,8 @@ class PlayerWindow(gtk.Window):
 		gtk.Window.__init__(self)
 		#self.set_default_size(704, 480)
 		# raw video UI is 1069x706 - leaving 31px for UI controls
-		self.set_default_size(1080, 800)
+		self.set_default_size(1024, 768)
+		self.first_run = True
 
 		self.create_ui()
 
@@ -332,6 +366,11 @@ class PlayerWindow(gtk.Window):
 			self.player.pause()
 			self.button.add(self.play_image)
 		else:
+			if self.first_run:
+				self.player.determine_duration()
+				self.seek_latest()
+				self.first_run = False
+
 			self.player.play()
 			if self.update_id == -1:
 				self.update_id = gobject.timeout_add(self.UPDATE_INTERVAL,
@@ -425,6 +464,9 @@ class PlayerWindow(gtk.Window):
 	def _status_updated(self, player, value):
 		self.lbl_status.set_text(value)
 
+def wakeup (widget, event):
+	print 'Event number %d woke me up', event.type
+	
 def main(args):
 	def usage():
 		sys.stderr.write("usage: %s URI-OF-MEDIA-FILE\n" % args[0])
@@ -436,6 +478,13 @@ def main(args):
 	gobject.type_register(VideoWidget)
 
 	w = PlayerWindow()
+	
+	w.add_events(gtk.gdk.KEY_PRESS_MASK |
+	             gtk.gdk.POINTER_MOTION_MASK |
+	             gtk.gdk.BUTTON_PRESS_MASK |
+	             gtk.gdk.SCROLL_MASK)
+	w.connect("key-press-event", wakeup)
+	w.connect("button-press-event", wakeup)
 
 	if len(args) != 2:
 		usage()

@@ -189,7 +189,7 @@ class PlayerWindow(gtk.Window):
 
 	def __init__(self):
 		gtk.Window.__init__(self)
-		self.set_default_size(704, 480)
+		self.set_default_size(670, 580)
 
 		self.create_ui()
 
@@ -385,7 +385,16 @@ def main(args):
 	if len(args) != 2:
 		usage()
 
-	w.load_file(args[1])
+	import pyccn
+	h = pyccn.CCN()
+	n = pyccn.Name(args[1])
+	i = pyccn.Interest(childSelector=1, answerOriginKind=pyccn.AOK_NONE)
+	co = h.get(n,i)
+	del h
+	del i
+	n = n + str(co.name[len(n)]) + "mainvideo"
+
+	w.load_file(str(n))
 	w.show_all()
 
 	gtk.main()

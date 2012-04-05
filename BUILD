@@ -11,7 +11,12 @@ build CCNX per PARC’s instructions for large repo sizes- create a csrc/conf/lo
 PLATCFLAGS= -O2 -D_FILE_OFFSET_BITS=64 -fPIC
 
 ccnr 
-pyccn (reorganization branch - https://github.com/remap/PyCCN)
+
+pyccn (reorganization branch - git://github.com/remap/PyCCN.git)
+
+
+ndnvideo (play_latest branch - git://github.com/remap/ndnvideo.git)
+
 
 
 from there, platform specific, incomplete list below:
@@ -22,15 +27,13 @@ python-gst0.10-dev (for gst-python)
 
 
 
-osX
+OSX:
 
 Install gstreamer & plugins view MacPorts:
 
 sudo port install gst-ffmpeg gst-plugins-bad gst-plugins-base gst-plugins-gl gst-plugins-gl gst-plugins-gl gst-plugins-good gst-plugins-ugly gst-rtsp-server gstreamer py27-gst-python
 
 - install PyCCN
-
-In play.py change xvimagesink to ximagesink (remove 'v'), this will be fixed later.
 
 
 testing:
