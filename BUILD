@@ -1,31 +1,24 @@
+Tested on:
+- Linux OpenSuSE & Ubuntu
+- MacOS X
 
-linux, tested on ubtuntu (OSX works too)
 better documentation pending, meanwhile for the early adopters:
 
+Dependencies & installing:
 
-dependencies & installing:
+- ccnx (includes ccnr)
+  If you plan streaming and ccnr crashes when it reaches size around 2GB
+  create file csrc/conf/local.mk with:
+  PLATCFLAGS= -O2 -D_FILE_OFFSET_BITS=64 -fPIC
 
-ccnx
-
-build CCNX per PARC’s instructions for large repo sizes- create a csrc/conf/local.mk that says
-PLATCFLAGS= -O2 -D_FILE_OFFSET_BITS=64 -fPIC
-
-ccnr 
-
-pyccn (reorganization branch - git://github.com/remap/PyCCN.git)
-
-
-ndnvideo (play_latest branch - git://github.com/remap/ndnvideo.git)
-
-
+- pyccn (git://github.com/remap/PyCCN.git)
+- ndnvideo (play_latest branch - git://github.com/remap/ndnvideo.git)
 
 from there, platform specific, incomplete list below:
 
 ubuntu:
 gstreamer0.10-plugins-ugly (for x264 encoding)
 python-gst0.10-dev (for gst-python)
-
-
 
 OSX:
 
@@ -57,5 +50,4 @@ if you get "No module named pygtk" then this most likely means that the python y
 comes with MacOS X. Unfortunately the Mac Ports packages aren't visible
 by default to that python, you could probably set up PYTHONPATH to point
 there but probably is easier to just use the python from macports.
-
 

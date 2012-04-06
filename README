@@ -1,8 +1,9 @@
 README:
 
-this is a video toolkit it publishes and plays live video in a segmented stream that also seeks from buffer in CCNx repo.
+This is a video toolkit it publishes and plays live video in a segmented stream
+that also seeks from buffer in CCNx repo.
 
-more detailed readme to come; meanwhile this should help the early adopters. 
+more detailed readme to come; meanwhile this should help the early adopters.
 
 ignore /sandbox, this readme applies to just /videostreaming folder
 
@@ -25,7 +26,7 @@ if that doesn't work, see 'troubleshooting', below.
 
 publishing local video:
 
-make sure CCNR_DIRECTORY is set and sourced (recommend ~/.profile or ~/.ccnx/)
+make sure CCNR_DIRECTORY is set and sourced (we recommend to define it in ~/.profile)
 make sure ccnd & ccnr (your local repo) are running, and are routed (for others to access)
 
 if you don't have a working video URI, make one with video_sink:
