@@ -17,14 +17,7 @@ def debug(cls, text):
 	print "%s: %s" % (cls.__class__.__name__, text)
 
 class CCNAudioDepacketizer(CCNDepacketizer):
-	def ts2index(self, ts):
-		return pyccn.Name.num2seg(ts)
-
-	def ts2index_add_1(self, ts):
-		return self.ts2index(ts + 1)
-
-	def index2ts(self, index):
-		return pyccn.Name.seg2num(index)
+	pass
 
 class AudioSrc(ElementBase.CCNElementSrc):
 	__gtype_name__ = 'AudioSrc'

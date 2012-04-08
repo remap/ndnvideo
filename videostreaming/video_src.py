@@ -13,24 +13,25 @@ def debug(cls, text):
 	print "%s: %s" % (cls.__class__.__name__, text)
 
 class CCNVideoDepacketizer(CCNDepacketizer):
-	def __init__(self, uri, window = None, timeout = None):
-		CCNDepacketizer.__init__(self, uri, window, timeout)
-		self._tc = None
-
-	def post_fetch_stream_info(self, caps):
-		framerate = caps[0]['framerate']
-		self._tc = utils.TCConverter(framerate)
-
-	def ts2index(self, ts):
-		return self._tc.ts2tc(ts)
-
-	def ts2index_add_1(self, ts):
-		tc = self._tc.ts2tc_obj(ts)
-		tc.next()
-		return tc.make_timecode()
-
-	def index2ts(self, index):
-		return self._tc.tc2ts(index)
+	pass
+#	def __init__(self, uri, window = None, timeout = None):
+#		CCNDepacketizer.__init__(self, uri, window, timeout)
+#		self._tc = None
+#
+#	def post_fetch_stream_info(self, caps):
+#		framerate = caps[0]['framerate']
+#		self._tc = utils.TCConverter(framerate)
+#
+#	def ts2index(self, ts):
+#		return self._tc.ts2tc(ts)
+#
+#	def ts2index_add_1(self, ts):
+#		tc = self._tc.ts2tc_obj(ts)
+#		tc.next()
+#		return tc.make_timecode()
+#
+#	def index2ts(self, index):
+#		return self._tc.tc2ts(index)
 
 class VideoSrc(ElementBase.CCNElementSrc):
 	__gtype_name__ = 'VideoSrc'

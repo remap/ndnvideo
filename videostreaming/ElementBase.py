@@ -223,10 +223,10 @@ class CCNPacketizer(object):
 				flush = result[1])
 
 class CCNDepacketizer(pyccn.Closure):
-	def __init__(self, uri, window = None, timeout = 1.0, retries = 1):
-		window = window if window is not None else 1
-		self.interest_lifetime = timeout if timeout is not None else 1.0
-		self.interest_retries = retries
+	def __init__(self, uri, window = None, timeout = None, retries = None):
+		window = window or 1
+		self.interest_lifetime = timeout or 1.0
+		self.interest_retries = retries or 1
 
 		self.queue = Queue.Queue(window * 2)
 		self.duration_ns = None
@@ -442,12 +442,12 @@ class CCNDepacketizer(pyccn.Closure):
 			name = str(info.Interest.name[-1])
 
 			if self._tmp_retry_requests[name]:
-				#debug(self, "timeout for %s - re-expressing" % info.Interest.name)
+#				debug(self, "timeout for %s - re-expressing" % info.Interest.name)
 				self._stats_retries += 1
 				self._tmp_retry_requests[name] -= 1
 				return pyccn.RESULT_REEXPRESS
 
-			#debug(self, "timeout for %r - skipping" % name)
+#			debug(self, "timeout for %r - skipping" % name)
 			self._stats_drops += 1
 			del self._tmp_retry_requests[name]
 			self._pipeline.timeout(pyccn.Name.seg2num(info.Interest.name[-1]))

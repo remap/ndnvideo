@@ -4,30 +4,33 @@ pygst.require("0.10")
 import gst
 import gobject
 
-import Queue, traceback, math, threading, os, sys
+import sys, datetime
 import pyccn
-from pyccn import _pyccn
 
 import utils
 from ElementBase import CCNPacketizer
 
 class CCNVideoPacketizer(CCNPacketizer):
 	def __init__(self, repolocation, uri):
-		self._tc = None
+#		self._tc = None
 
 		handle = pyccn.CCN()
 		publisher = utils.RepoPublisher(handle, 'video', repolocation)
 		super(CCNVideoPacketizer, self).__init__(publisher, uri)
 
-	def post_set_caps(self, caps):
-		framerate = caps[0]['framerate']
-		self._tc = utils.TCConverter(framerate)
+#	def post_set_caps(self, caps):
+#		framerate = caps[0]['framerate']
+#		self._tc = utils.TCConverter(framerate)
 
 	def pre_process_buffer(self, buffer):
 		if not buffer.flag_is_set(gst.BUFFER_FLAG_DELTA_UNIT):
-			frame = self._tc.ts2tc(buffer.timestamp)
-			print "frame %s" % frame
-			packet = self.prepare_frame_packet(frame, self._segment)
+#			frame = self._tc.ts2tc(buffer.timestamp)
+#			print "frame %s" % frame
+#			packet = self.prepare_frame_packet(frame, self._segment)
+
+			timestamp = buffer.timestamp
+			print "video: %s" % datetime.timedelta(seconds = float(timestamp) / gst.SECOND)
+			packet = self.prepare_frame_packet(pyccn.Name.num2seg(timestamp), self._segment)
 			self.publisher.put(packet)
 			return True, False
 		return False, False
