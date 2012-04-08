@@ -5,8 +5,7 @@
 import pygtk
 pygtk.require('2.0')
 
-import sys
-import os
+import sys, datetime
 
 import gobject
 gobject.threads_init()
@@ -32,7 +31,6 @@ class GstPlayer(gobject.GObject):
 		gobject.GObject.__init__(self)
 		self.playing = False
 
-#					max-size-buffers=0 max-size-time=0 max-size-time=2000000000 \
 		self.player = gst.parse_launch("\
 				multiqueue name=mqueue use-buffering=true \
 				identity name=video_input ! mqueue. mqueue. ! ffdec_h264 ! %s \
@@ -293,14 +291,8 @@ class PlayerWindow(gtk.Window):
 		else:
 			real = value * self.p_duration / 100
 
-		seconds = real / gst.SECOND
-		minutes = seconds / 60
-
-		hours = minutes / 60
-		minutes %= 60
-		seconds %= 60
-
-		return "%02d:%02d:%02d" % (hours, minutes, seconds)
+		seconds = int(real / gst.SECOND)
+		return str(datetime.timedelta(seconds = seconds))
 
 	def scale_button_press_cb(self, widget, event):
 		# see seek.c:start_seek

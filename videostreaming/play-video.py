@@ -5,7 +5,7 @@
 import pygtk
 pygtk.require('2.0')
 
-import sys
+import sys, datetime
 
 import gobject
 gobject.threads_init()
@@ -20,27 +20,19 @@ gtk.gdk.threads_init()
 import utils
 from video_src import VideoSrc
 
-class GstPlayer:
+class GstPlayer(gobject.GObject):
+	__gsignals__ = {
+		'status-updated': (gobject.SIGNAL_RUN_FIRST, gobject.TYPE_NONE,
+			(str,))
+	}
+
 	def __init__(self, videowidget):
+		gobject.GObject.__init__(self)
 		self.playing = False
 
-		self.player = gst.parse_launch("queue2 name=decoder ring-buffer-max-size=0 ! ffdec_h264 max-threads=3 ! ffmpegcolorspace ! queue ! %s" % utils.video_sink)
-		self.src = gst.element_factory_make("VideoSrc")
-		self.player.add(self.src)
-
-#		self.queue = gst.element_factory_make("queue2")
-#		#self.queue.set_property('use-buffering', True)
-#		self.decoder = gst.element_factory_make("ffdec_h264")
-#		#self.decoder.set_property('skip-frame', 5)
-#		self.decoder.set_property('max-threads', 3)
-#		self.convert = gst.element_factory_make("ffmpegcolorspace")
-#		self.sink = gst.element_factory_make("xvimagesink")
-#
-#		self.player = gst.Pipeline()
-#		self.player.add_many(self.src, self.decoder, self.convert, self.sink)
-#
-#		#self.player = gst.parse_launch("CCNSrc ! ffdec_h264 ! xvimagesink")
-#		#self.player = gst.element_factory_make("playbin", "player")
+		self.player = gst.parse_launch("queue2 name=video_input ! decodebin2 ! %s" % utils.video_sink)
+		self.vsrc = gst.element_factory_make("VideoSrc")
+		self.player.add(self.vsrc)
 
 		self.videowidget = videowidget
 		self.on_eos = False
@@ -50,6 +42,11 @@ class GstPlayer:
 		bus.add_signal_watch()
 		bus.connect('sync-message::element', self.on_sync_message)
 		bus.connect('message', self.on_message)
+
+		self.started_buffering = False
+		self.stats_buffering_percent = 0
+
+		gobject.timeout_add(100, self.on_status_update)
 
 	def on_sync_message(self, bus, message):
 		if message.structure is None:
@@ -75,18 +72,35 @@ class GstPlayer:
 			if self.on_eos:
 				self.on_eos()
 			self.playing = False
+		elif t == gst.MESSAGE_BUFFERING:
+			self.process_buffering_stats(message)
+
+	def process_buffering_stats(self, message):
+		percent = message.parse_buffering()
+		self.stats_buffering_percent = percent
+
+		if percent < 100 and not self.started_buffering:
+			self.started_buffering = True
+			self.was_playing = self.is_playing()
+			if self.was_playing:
+				self.pause()
+
+		if percent == 100 and self.started_buffering:
+			self.started_buffering = False
+			if self.was_playing:
+				self.play()
+
+	def on_status_update(self):
+		video_status = self.vsrc.get_status()
+		self.emit("status-updated", "Video: %s\n"
+				"Buffer: %d%% (playing: %s)" % (video_status, self.stats_buffering_percent, "Yes" if self.playing else "No"))
+		return True
 
 	def set_location(self, location):
-		print "%s >%s<" % (type(location), location)
-		self.src.set_property('location', location)
+		self.vsrc.set_property('location', location)
 
-		decoder = self.player.get_by_name('decoder')
-		self.src.link(decoder)
-#		self.src.set_property('location', location)
-#		self.src.link(self.decoder)
-#		#self.queue.link(self.decoder)
-#		self.decoder.link(self.convert)
-#		self.convert.link(self.sink)
+		video_input = self.player.get_by_name('video_input')
+		self.vsrc.link(video_input)
 
 	def query_position(self):
 		"Returns a (position, duration) tuple"
@@ -133,8 +147,8 @@ class GstPlayer:
 		self.player.set_state(gst.STATE_NULL)
 		gst.info("stopped player")
 
-	def get_state(self, timeout=1):
-		return self.player.get_state(timeout=timeout)
+	def get_state(self, timeout = 1):
+		return self.player.get_state(timeout = timeout)
 
 	def is_playing(self):
 		return self.playing
@@ -159,18 +173,20 @@ class VideoWidget(gtk.DrawingArea):
 
 class PlayerWindow(gtk.Window):
 	UPDATE_INTERVAL = 500
+
 	def __init__(self):
 		gtk.Window.__init__(self)
-		self.set_default_size(410, 325)
+		self.set_default_size(670, 580)
 
 		self.create_ui()
 
 		self.player = GstPlayer(self.videowidget)
+		self.player.connect("status-updated", self._status_updated)
 
 		def on_eos():
 			self.player.seek(0L)
 			self.play_toggled()
-		self.player.on_eos = lambda *x: on_eos()
+		self.player.on_eos = lambda * x: on_eos()
 
 		self.update_id = -1
 		self.changed_id = -1
@@ -182,7 +198,7 @@ class PlayerWindow(gtk.Window):
 		def on_delete_event():
 			self.player.stop()
 			gtk.main_quit()
-		self.connect('delete-event', lambda *x: on_delete_event())
+		self.connect('delete-event', lambda * x: on_delete_event())
 
 	def load_file(self, location):
 		self.player.set_location(location)
@@ -195,7 +211,7 @@ class PlayerWindow(gtk.Window):
 		vbox.pack_start(self.videowidget)
 
 		hbox = gtk.HBox()
-		vbox.pack_start(hbox, fill=False, expand=False)
+		vbox.pack_start(hbox, fill = False, expand = False)
 
 		self.pause_image = gtk.image_new_from_stock(gtk.STOCK_MEDIA_PAUSE,
 			gtk.ICON_SIZE_BUTTON)
@@ -210,7 +226,7 @@ class PlayerWindow(gtk.Window):
 		button.show()
 		hbox.pack_start(button, False)
 		button.set_property('has-default', True)
-		button.connect('clicked', lambda *args: self.play_toggled())
+		button.connect('clicked', lambda * args: self.play_toggled())
 
 		self.adjustment = gtk.Adjustment(0.0, 0.00, 100.0, 0.1, 1.0, 1.0)
 		hscale = gtk.HScale(self.adjustment)
@@ -222,8 +238,25 @@ class PlayerWindow(gtk.Window):
 		hbox.pack_start(hscale)
 		self.hscale = hscale
 
+		self.img_forward = gtk.image_new_from_stock(gtk.STOCK_MEDIA_FORWARD,
+			gtk.ICON_SIZE_BUTTON)
+		self.img_forward.show()
+		self.btn_live = button = gtk.Button()
+		button.add(self.img_forward)
+		button.set_focus_on_click(False)
+		button.show()
+		hbox.pack_start(button, False)
+		button.connect('clicked', lambda * args: self.seek_latest())
+
+		frame = gtk.Frame("Status")
+		self.lbl_status = gtk.Label()
+		self.lbl_status.set_justify(gtk.JUSTIFY_LEFT)
+		self.lbl_status.set_text("Hello")
+		frame.add(self.lbl_status)
+		vbox.pack_end(frame, False)
+
 		self.videowidget.connect_after('realize',
-				lambda *x: self.play_toggled())
+				lambda * x: self.play_toggled())
 
 	def play_toggled(self):
 		self.button.remove(self.button.child)
@@ -237,21 +270,25 @@ class PlayerWindow(gtk.Window):
 				                                     self.update_scale_cb)
 			self.button.add(self.pause_image)
 
+	def seek_latest(self):
+		unused_position, duration = self.player.query_position()
+		self.player.seek(duration)
+
 	def scale_format_value_cb(self, scale, value):
 		if self.p_duration == -1:
 			real = 0
 		else:
 			real = value * self.p_duration / 100
 
-		seconds = real / gst.SECOND
-
-		return "%02d:%02d" % (seconds / 60, seconds % 60)
+		seconds = int(real / gst.SECOND)
+		return str(datetime.timedelta(seconds = seconds))
 
 	def scale_button_press_cb(self, widget, event):
 		# see seek.c:start_seek
 		gst.debug('starting seek')
 
 		self.button.set_sensitive(False)
+		self.btn_live.set_sensitive(False)
 		self.was_playing = self.player.is_playing()
 		if self.was_playing:
 			self.player.pause()
@@ -267,26 +304,27 @@ class PlayerWindow(gtk.Window):
 				self.scale_value_changed_cb)
 
 	def scale_value_changed_cb(self, scale):
-#		self.seek_to = long(scale.get_value() * self.p_duration / 100) # in ns
-		# see seek.c:seek_cb
-		real = long(scale.get_value() * self.p_duration / 100) # in ns
-		gst.debug('value changed, perform seek to %r' % real)
-		self.player.seek(real)
-		# allow for a preroll
-		self.player.get_state(timeout=50*gst.MSECOND) # 50 ms
-
-	def scale_button_release_cb(self, widget, event):
+		self.seek_to = long(scale.get_value() * self.p_duration / 100) # in ns
 #		# see seek.c:seek_cb
-#		real = self.seek_to
+#		real = long(scale.get_value() * self.p_duration / 100) # in ns
 #		gst.debug('value changed, perform seek to %r' % real)
 #		self.player.seek(real)
 #		# allow for a preroll
-#		#self.player.get_state(timeout=50*gst.MSECOND) # 50 ms
+#		self.player.get_state(timeout=50*gst.MSECOND) # 50 ms
+
+	def scale_button_release_cb(self, widget, event):
+		# see seek.c:seek_cb
+		real = self.seek_to
+		gst.debug('value changed, perform seek to %r' % real)
+		self.player.seek(real)
+		# allow for a preroll
+		#self.player.get_state(timeout=50*gst.MSECOND) # 50 ms
 
 		# see seek.cstop_seek
 		widget.disconnect(self.changed_id)
 		self.changed_id = -1
 
+		self.btn_live.set_sensitive(True)
 		self.button.set_sensitive(True)
 		if self.seek_timeout_id != -1:
 			gobject.source_remove(self.seek_timeout_id)
@@ -309,6 +347,9 @@ class PlayerWindow(gtk.Window):
 			self.adjustment.set_value(value)
 
 		return True
+
+	def _status_updated(self, player, value):
+		self.lbl_status.set_text(value)
 
 def main(args):
 	def usage():
