@@ -156,7 +156,9 @@ class DataSegmenter(object):
 
 class CCNPacketizer(object):
 	def __init__(self, publisher, uri):
-		self._chunk_size = 4096
+		freshness = 30 * 60
+
+		self._chunk_size = 1024
 		self._segment = 0
 		self._caps = None
 
@@ -168,12 +170,12 @@ class CCNPacketizer(object):
 		self._name_key = self._basename.append("key")
 
 		self._key = pyccn.CCN.getDefaultKey()
-		self._signed_info = pyccn.SignedInfo(self._key.publicKeyID, pyccn.KeyLocator(self._name_key))
-		self._signed_info_frames = pyccn.SignedInfo(self._key.publicKeyID, pyccn.KeyLocator(self._name_key))
+		self._signed_info = pyccn.SignedInfo(self._key.publicKeyID, pyccn.KeyLocator(self._name_key), freshness = freshness)
+		self._signed_info_frames = pyccn.SignedInfo(self._key.publicKeyID, pyccn.KeyLocator(self._name_key), freshness = freshness)
 
 		self._segmenter = DataSegmenter(self.send_data, self._chunk_size)
 
-		signed_info = pyccn.SignedInfo(self._key.publicKeyID, pyccn.KeyLocator(self._key))
+		signed_info = pyccn.SignedInfo(self._key.publicKeyID, pyccn.KeyLocator(self._key), freshness = freshness)
 		co = pyccn.ContentObject(self._name_key, self._key.publicToDER(), signed_info)
 		co.sign(self._key)
 		self.publisher.put(co)
@@ -227,7 +229,6 @@ class CCNDepacketizer(pyccn.Closure):
 		window = window or 1
 		self.interest_lifetime = timeout or 1.0
 		self.interest_retries = retries or 1
-
 		self.queue = Queue.Queue(window * 2)
 		self.duration_ns = None
 
@@ -371,8 +372,7 @@ class CCNDepacketizer(pyccn.Closure):
 		return (self.index2ts(index), segment)
 
 	def check_duration(self):
-		interest = pyccn.Interest(childSelector = 1,
-			answerOriginKind = pyccn.AOK_NONE)
+		interest = pyccn.Interest(childSelector = 1)
 
 		if self._duration_last:
 			interest.exclude = pyccn.ExclusionFilter()
