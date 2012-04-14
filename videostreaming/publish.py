@@ -37,11 +37,11 @@ if __name__ == "__main__":
 
 	pipes = {}
 	pipes['m'] = video_pipe % ("/dev/video0", 704, 480, 1024, uri + "mainvideo" + "video") + " " + audio_pipe % (128, uri + "mainvideo" + "audio")
-	#pipes['m2'] = video_pipe % ("/dev/video0", 704, 480, 512, uri + "mainvideo" + "video2")
-	#pipes['1'] = video_pipe % ("/dev/video1", 352, 240, 256, uri + "video1")
-	#pipes['2'] = video_pipe % ("/dev/video2", 352, 240, 256, uri + "video2")
-	#pipes['3'] = video_pipe % ("/dev/video3", 352, 240, 256, uri + "video3")
-	#pipes['4'] = video_pipe % ("/dev/video4", 352, 240, 256, uri + "video4")
+	pipes['m2'] = video_pipe % ("/dev/video0", 704, 480, 512, uri + "mainvideo" + "video2")
+	pipes['1'] = video_pipe % ("/dev/video1", 352, 240, 256, uri + "video1")
+	pipes['2'] = video_pipe % ("/dev/video2", 352, 240, 256, uri + "video2")
+	pipes['3'] = video_pipe % ("/dev/video3", 352, 240, 256, uri + "video3")
+	pipes['4'] = video_pipe % ("/dev/video4", 352, 240, 256, uri + "video4")
 
 	#pipeline = gst.parse_launch(pipes[mode])
 	p = []

@@ -158,7 +158,7 @@ class CCNPacketizer(object):
 	def __init__(self, publisher, uri):
 		freshness = 30 * 60
 
-		self._chunk_size = 1024
+		self._chunk_size = 3900
 		self._segment = 0
 		self._caps = None
 
@@ -195,6 +195,8 @@ class CCNPacketizer(object):
 	def prepare_stream_info_packet(self, caps):
 		name = self._basename.append("stream_info")
 
+		# Make sure the timestamp is regenerated
+		self._signed_info.ccn_data_dirty = True
 		co = pyccn.ContentObject(name, self._caps, self._signed_info)
 		co.sign(self._key)
 
@@ -203,6 +205,8 @@ class CCNPacketizer(object):
 	def prepare_frame_packet(self, frame, segment):
 		name = self._name_frames.append(frame)
 
+		# Make sure the timestamp is regenerated
+		self._signed_info_frames.ccn_data_dirty = True
 		co = pyccn.ContentObject(name, segment, self._signed_info_frames)
 		co.sign(self._key)
 
@@ -212,6 +216,8 @@ class CCNPacketizer(object):
 		name = self._name_segments.appendSegment(self._segment)
 		self._segment += 1
 
+		# Make sure the timestamp is regenerated
+		self._signed_info.ccn_data_dirty = True
 		co = pyccn.ContentObject(name, packet, self._signed_info)
 		co.sign(self._key)
 		self.publisher.put(co)
