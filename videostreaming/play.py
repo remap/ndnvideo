@@ -381,15 +381,16 @@ def main(args):
 	h = pyccn.CCN()
 	n = pyccn.Name(args[1])
 	i = pyccn.Interest(childSelector=1, answerOriginKind=pyccn.AOK_NONE)
-	co = h.get(n,i)
-	del h
-	del i
-	n = n + str(co.name[len(n)]) + "mainvideo"
-
-	w.load_file(str(n))
-	w.show_all()
-
-	gtk.main()
+	try:
+		co = h.get(n,i)
+		del h
+		del i
+		n = n + str(co.name[len(n)]) + "mainvideo"
+		w.load_file(str(n))
+		w.show_all()
+		gtk.main()
+	except:
+		print "no content found at "+str(n)
 
 if __name__ == '__main__':
 	sys.exit(main(sys.argv))
