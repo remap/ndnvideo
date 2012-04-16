@@ -3,7 +3,7 @@ pygst.require("0.10")
 import gst
 import gobject
 
-import math, Queue, threading, struct, traceback
+import math, Queue, threading, struct, traceback, time, datetime
 
 import pyccn
 import utils
@@ -232,14 +232,25 @@ class CCNPacketizer(object):
 
 class CCNDepacketizer(pyccn.Closure):
 	def __init__(self, uri, window = None, timeout = None, retries = None):
+		# size of the pipeline
 		window = window or 1
+
+		# amount of time to wait for interest response
 		self.interest_lifetime = timeout or 1.0
+
+		# how many times to retry request
 		self.interest_retries = retries or 1
+
+		# maximum number of buffers we can hold in memory waiting to be processed
 		self.queue = Queue.Queue(window * 2)
+
+		#duration of the stream (in nanoseconds)
 		self.duration_ns = None
 
+		#
 		self._running = False
 		self._caps = None
+		self._start_time = None
 		self._seek_segment = None
 		self._duration_last = None
 		self._cmd_q = Queue.Queue(2)
@@ -272,10 +283,28 @@ class CCNDepacketizer(pyccn.Closure):
 			debug(self, "Unable to fetch %s" % name)
 			exit(10)
 
+		ts = co.signedInfo.py_timestamp
+		debug(self, "Got timestamp: %s %f" % (time.ctime(ts),ts))
+		self._start_time = ts
+
 		self._caps = gst.caps_from_string(co.content)
 		debug(self, "Stream caps: %s" % self._caps)
 
 		self.post_fetch_stream_info(self._caps)
+
+		if self._start_time is None:
+			self.fetch_start_time()
+
+	def fetch_start_time(self):
+		name = self._name_segments.appendSegment(0)
+		co = self._get_handle.get(name)
+		if not co:
+			debug(self, "Unable to fetch %s" % name)
+			exit(10)
+
+		ts = co.signedInfo.py_timestamp
+		debug(self, "Got timestamp: %s %f" % (time.ctime(ts), ts))
+		self._start_time = ts
 
 	def post_fetch_stream_info(self, caps):
 		pass
@@ -396,6 +425,49 @@ class CCNDepacketizer(pyccn.Closure):
 			self.duration_ns = self.index2ts(self._duration_last)
 		else:
 			self.duration_ns = 0
+
+	def __check_duration(self, interest):
+		t_start = time.time()
+		co = self._get_handle.get(self._name_frames, interest)
+		t_end = time.time()
+
+		if co is None:
+			return None
+
+		name = co.name[-1:]
+		duration = pyccn.Name.seg2num(co.name[-1])
+		t_packet = co.signedInfo.py_timestamp
+		rtt = t_end - t_start
+		t_diff = t_start - t_packet
+
+		print "Duration:", datetime.timedelta(seconds = duration / float(gst.SECOND))
+		print "Packet timestamp:", time.ctime(t_packet)
+		print "Time difference:", datetime.timedelta(seconds = t_diff)
+		print "Rtt:", rtt
+
+		return duration, t_packet, t_diff, rtt, name
+
+	def check_duration_initial(self):
+		duration = None
+
+		interest = pyccn.Interest(childSelector = 1,
+			answerOriginKind = pyccn.AOK_DEFAULT)
+
+		exclude = interest.exclude = pyccn.ExclusionFilter()
+
+		while True:
+			res = self.__check_duration(interest)
+			if res is None:
+				break
+
+			duration, t_packet, t_diff, rtt, name = res
+
+			print "Excluding %r" % name
+			exclude.reset()
+			exclude.add_any()
+			exclude.add_name(name)
+
+		return duration
 
 	def issue_interest(self, segment):
 		name = self._name_segments.appendSegment(segment)
@@ -594,7 +666,15 @@ class CCNElementSrc(gst.BaseSrc):
 		return True
 
 	def query_duration(self):
-		pass
+		debug(self, "Querying duration")
+		return self.depacketizer.check_duration_initial()
 
 	def get_status(self):
 		return self.depacketizer.get_status()
+
+#	def do_change_state(self, transition):
+#		print "CHANGE IS INEVITABLE!"
+#		print transition
+#		res = gst.BaseSrc.do_change_state(self, transition)
+#		print res
+#		return gst.STATE_CHANGE_SUCCESS

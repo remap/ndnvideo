@@ -59,6 +59,9 @@ class VideoSrc(ElementBase.CCNElementSrc):
 		else:
 			raise AttributeError, 'unknown property %s' % property.name
 
+	def do_set_state(self, state):
+		print "CHANGING STATE %s" % state
+
 gst.element_register(VideoSrc, 'VideoSrc')
 
 if __name__ == '__main__':
