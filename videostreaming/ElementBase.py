@@ -323,9 +323,9 @@ class CCNDepacketizer(pyccn.Closure):
 	def stop(self):
 		self._running = False
 		self.finish_ccn_loop()
-		debug(self, "Waiting for ccn to shutdown")
+		debug(self, "Waiting for ccn to shutdown ...")
 		self._receiver_thread.join()
-		debug(self, "Shot down")
+		debug(self, "Thread was shut down.")
 
 	def finish_ccn_loop(self):
 		self._handle.setRunTimeout(0)
@@ -333,6 +333,49 @@ class CCNDepacketizer(pyccn.Closure):
 	def seek(self, ns):
 		self._cmd_q.put([CMD_SEEK, ns])
 		self.finish_ccn_loop()
+
+	def __check_duration(self, interest):
+		t_start = time.time()
+		co = self._get_handle.get(self._name_frames, interest)
+		t_end = time.time()
+
+		if co is None:
+			return None
+
+		name = co.name[-1:]
+		duration = pyccn.Name.seg2num(co.name[-1])
+		t_packet = co.signedInfo.py_timestamp
+		rtt = t_end - t_start
+		t_diff = t_start - t_packet
+
+		print "Duration:", datetime.timedelta(seconds = duration / float(gst.SECOND))
+		print "Packet timestamp:", time.ctime(t_packet)
+		print "Time difference:", datetime.timedelta(seconds = t_diff)
+		print "Rtt:", rtt
+
+		return duration, t_packet, t_diff, rtt, name
+
+	def check_duration_initial(self):
+		duration = None
+
+		interest = pyccn.Interest(childSelector = 1,
+			answerOriginKind = pyccn.AOK_DEFAULT)
+
+		exclude = interest.exclude = pyccn.ExclusionFilter()
+
+		while True:
+			res = self.__check_duration(interest)
+			if res is None:
+				break
+
+			duration, t_packet, t_diff, rtt, name = res
+
+			print "Excluding %r" % name
+			exclude.reset()
+			exclude.add_any()
+			exclude.add_name(name)
+
+		return duration
 
 #
 # Bellow methods are called by thread
@@ -371,15 +414,6 @@ class CCNDepacketizer(pyccn.Closure):
 			self._cmd_q.task_done()
 		else:
 			raise Exception, "Unknown command: %d" % cmd
-
-	def ts2index(self, ts):
-		return pyccn.Name.num2seg(ts)
-
-	def ts2index_add_1(self, ts):
-		return self.ts2index(ts + 1)
-
-	def index2ts(self, index):
-		return pyccn.Name.seg2num(index)
 
 	def fetch_seek_query(self, ns):
 		index = self.ts2index_add_1(ns)
@@ -425,49 +459,6 @@ class CCNDepacketizer(pyccn.Closure):
 			self.duration_ns = self.index2ts(self._duration_last)
 		else:
 			self.duration_ns = 0
-
-	def __check_duration(self, interest):
-		t_start = time.time()
-		co = self._get_handle.get(self._name_frames, interest)
-		t_end = time.time()
-
-		if co is None:
-			return None
-
-		name = co.name[-1:]
-		duration = pyccn.Name.seg2num(co.name[-1])
-		t_packet = co.signedInfo.py_timestamp
-		rtt = t_end - t_start
-		t_diff = t_start - t_packet
-
-		print "Duration:", datetime.timedelta(seconds = duration / float(gst.SECOND))
-		print "Packet timestamp:", time.ctime(t_packet)
-		print "Time difference:", datetime.timedelta(seconds = t_diff)
-		print "Rtt:", rtt
-
-		return duration, t_packet, t_diff, rtt, name
-
-	def check_duration_initial(self):
-		duration = None
-
-		interest = pyccn.Interest(childSelector = 1,
-			answerOriginKind = pyccn.AOK_DEFAULT)
-
-		exclude = interest.exclude = pyccn.ExclusionFilter()
-
-		while True:
-			res = self.__check_duration(interest)
-			if res is None:
-				break
-
-			duration, t_packet, t_diff, rtt, name = res
-
-			print "Excluding %r" % name
-			exclude.reset()
-			exclude.add_any()
-			exclude.add_name(name)
-
-		return duration
 
 	def issue_interest(self, segment):
 		name = self._name_segments.appendSegment(segment)
@@ -544,6 +535,15 @@ class CCNDepacketizer(pyccn.Closure):
 			% (self._pipeline.get_pipeline_size(), self._pipeline.window,
 			self._pipeline.get_position(), self._stats_retries, self._stats_drops,
 			self.duration_ns / gst.SECOND if self.duration_ns else 1.0)
+
+	def ts2index(self, ts):
+		return pyccn.Name.num2seg(ts)
+
+	def ts2index_add_1(self, ts):
+		return self.ts2index(ts + 1)
+
+	def index2ts(self, index):
+		return pyccn.Name.seg2num(index)
 
 class CCNElementSrc(gst.BaseSrc):
 	__gsttemplates__ = (

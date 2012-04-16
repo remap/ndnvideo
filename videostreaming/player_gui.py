@@ -190,7 +190,7 @@ class PlayerWindow(gtk.Window):
 		else:
 			gst.debug('released slider, setting back to playing')
 			if self.was_playing:
-				self.player.play()
+				self.player.real_play()
 
 		if self.update_id != -1:
 			self.error('Had a previous update timeout id')

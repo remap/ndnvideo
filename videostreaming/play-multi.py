@@ -19,25 +19,20 @@ from video_src import VideoSrc
 class GstPlayer(player.GstPlayer):
 	__pipeline = """
 		multiqueue name=mqueue use-buffering=true
-		identity name=video_input ! mqueue. mqueue. ! ffdec_h264 ! %s \
-		identity name=audio_input ! mqueue. mqueue. ! ffdec_mp3 ! %s
-	""" % (utils.video_sink, utils.audio_sink)
-
-	__pipeline = """
-	videomixer name=mix ! ffmpegcolorspace ! videoscale ! %s \
-	identity name=video_input_1 ! ffdec_h264 ! queue ! video/x-raw-yuv, width=352, height=240 ! \
-	textoverlay font-desc="Sans 24" text="CAM1" valign=top halign=left shaded-background=true ! \
-	videobox border-alpha=0 top=0 left=0 ! mix. \
-	identity name=video_input_2 ! ffdec_h264 ! queue ! video/x-raw-yuv, width=352, height=240 ! \
-	textoverlay font-desc="Sans 24" text="CAM2" valign=top halign=left shaded-background=true ! \
-	videobox border-alpha=0 top=0 left=-352 ! mix. \
-	identity name=video_input_3 ! ffdec_h264 ! queue ! video/x-raw-yuv, width=352, height=240 ! \
-	textoverlay font-desc="Sans 24" text="CAM3" valign=top halign=left shaded-background=true ! \
-	videobox border-alpha=0 top=-0 left=-704 ! mix. \
-	identity name=video_input_main ! ffdec_h264 ! queue ! video/x-raw-yuv, width=704, height=480 ! \
-	textoverlay font-desc="Sans 12" text="MAIN" valign=top halign=left shaded-background=true ! \
-	videobox border-alpha=0 top=-240 left=0 ! mix.	\
-	identity name=audio_input ! ffdec_mp3 ! queue ! audioconvert ! %s
+		videomixer name=mix ! ffmpegcolorspace ! videoscale ! %s
+		identity name=video_input_1 ! ffdec_h264 !
+			textoverlay font-desc="Sans 24" text="CAM1" valign=top halign=left shaded-background=true !
+			videobox border-alpha=0 top=0 left=0 ! mqueue. mqueue. ! mix.
+		identity name=video_input_2 ! ffdec_h264 !
+			textoverlay font-desc="Sans 24" text="CAM2" valign=top halign=left shaded-background=true !
+			videobox border-alpha=0 top=0 left=-352 ! mqueue. mqueue. ! mix.
+		identity name=video_input_3 ! ffdec_h264 !
+			textoverlay font-desc="Sans 24" text="CAM3" valign=top halign=left shaded-background=true !
+			videobox border-alpha=0 top=-0 left=-704 ! mqueue. mqueue. ! mix.
+		identity name=video_input_main ! ffdec_h264 !
+			textoverlay font-desc="Sans 12" text="MAIN" valign=top halign=left shaded-background=true !
+			videobox border-alpha=0 top=-240 left=0 ! mqueue. mqueue. ! mix.
+		identity name=audio_input ! ffdec_mp3 ! audioconvert ! mqueue. mqueue. ! %s
 	""" % (utils.video_sink, utils.audio_sink)
 
 	def init_elements(self):
@@ -63,12 +58,18 @@ class GstPlayer(player.GstPlayer):
 		self.src = self.asrc
 		
 	def on_status_update(self):
-		video_status = self.vsrc_main.get_status()
+		video0_status = self.vsrc_main.get_status()
+		video1_status = self.vsrc_1.get_status()
+		video2_status = self.vsrc_2.get_status()
+		video3_status = self.vsrc_3.get_status()
 		audio_status = self.asrc.get_status()
 		self.emit("status-updated", 
-			"Video: %s\n"
+			"Video0: %s\n"
+			"Video1: %s\n"
+			"Video2: %s\n"
+			"Video3: %s\n"
 			"Audio: %s\n"
-			"Buffer: %d%% (playing: %s)" % (video_status, audio_status, self.stats_buffering_percent, "Yes" if self.playing else "No"))
+			"Buffer: %d%% (playing: %s)" % (video0_status, video1_status, video2_status, video3_status, audio_status, self.stats_buffering_percent, "Yes" if self.playing else "No"))
 		return True
 
 	def set_location(self, location):
