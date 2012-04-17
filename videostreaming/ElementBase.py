@@ -236,7 +236,7 @@ class CCNDepacketizer(pyccn.Closure):
 		window = window or 1
 
 		# amount of time to wait for interest response
-		self.interest_lifetime = timeout or 1.0
+		self.interest_lifetime = timeout or 2.0
 
 		# how many times to retry request
 		self.interest_retries = retries or 1
@@ -270,6 +270,10 @@ class CCNDepacketizer(pyccn.Closure):
 		self._stats_drops = 0
 
 		self._tmp_retry_requests = {}
+
+		DurationChecker = type('DurationChecker', (pyccn.Closure,),
+			dict(upcall=self.duration_process_result))
+		self._duration_callback = DurationChecker()
 
 	def set_window(self, window):
 		self._pipeline.window = window
@@ -383,17 +387,11 @@ class CCNDepacketizer(pyccn.Closure):
 
 	def run(self):
 		debug(self, "Running ccn loop")
-		self.check_duration()
 
-		iter = 0
 		while self._running:
-			if iter > 5:
-				iter = 0
-				self.check_duration()
-
-			self._handle.run(2000)
+			self.check_duration()
+			self._handle.run(10000)
 			self.process_commands()
-			iter += 1
 
 		debug(self, "Finished running ccn loop")
 
@@ -440,6 +438,28 @@ class CCNDepacketizer(pyccn.Closure):
 
 		return (self.index2ts(index), segment)
 
+	def duration_process_result(self, kind, info):
+		if kind == pyccn.UPCALL_FINAL:
+			return pyccn.RESULT_OK
+
+		if kind == pyccn.UPCALL_CONTENT_UNVERIFIED:
+			return pyccn.RESULT_VERIFY
+
+		if kind != pyccn.UPCALL_CONTENT and kind != pyccn.UPCALL_INTEREST_TIMED_OUT:
+			return pyccn.RESULT_ERR
+
+		if kind == pyccn.UPCALL_CONTENT:
+			self._duration_last = info.ContentObject.name[-1]
+		else:
+			debug(self, "No response received for duration request")
+
+		if self._duration_last:
+			self.duration_ns = self.index2ts(self._duration_last)
+		else:
+			self.duration_ns = 0
+
+		return pyccn.RESULT_OK
+
 	def check_duration(self):
 		interest = pyccn.Interest(childSelector = 1)
 
@@ -448,17 +468,7 @@ class CCNDepacketizer(pyccn.Closure):
 			interest.exclude.add_any()
 			interest.exclude.add_name(pyccn.Name([self._duration_last]))
 
-		co = self._get_handle.get(self._name_frames, interest, 100)
-		if co:
-			self._duration_last = co.name[-1]
-			#debug(self, ">%r< (%f)" % (self._duration_last, self.index2ts(self._duration_last) / 1000000000.))
-		else:
-			debug(self, "No response received for duration request")
-
-		if self._duration_last:
-			self.duration_ns = self.index2ts(self._duration_last)
-		else:
-			self.duration_ns = 0
+		self._handle.expressInterest(self._name_frames, self._duration_callback, interest)
 
 	def issue_interest(self, segment):
 		name = self._name_segments.appendSegment(segment)
