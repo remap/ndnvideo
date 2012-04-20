@@ -438,6 +438,138 @@ class PipelineFetch(object):
 
 		self._request_more_data()
 
+class TaskThread(threading.Thread):
+	def __init__(self, interval = 15.0, task = None):
+		threading.Thread.__init__(self)
+		self._finished = threading.Event()
+		self._interval = interval
+		self._task = task
+
+	@property
+	def interval(self):
+		"""The number of seconds we sleep between executing our task"""
+		return self._interval
+
+	@interval.setter
+	def interval(self, value):
+		self._interval = value
+
+	@property
+	def frequency(self):
+		"""The frequency at which we execute the task"""
+		return 1.0 / self._interval
+
+	@frequency.setter
+	def frequency(self, value):
+		self._interval = 1.0 / value
+
+	def shutdown(self):
+		"""Stop this thread"""
+		self._finished.set()
+
+	def run(self):
+		new_time = time.time()
+		while not self._finished.isSet():
+			self.task()
+			new_time += self._interval
+
+			w_time = new_time - time.time()
+			if w_time > 0:
+				self._finished.wait(w_time)
+
+	def task(self):
+		"""The task done by this thread - override in subclasses"""
+		if self._task:
+			self._task()
+
+class PipelineFreqFetch(object):
+	def __init__(self, request_cb, receive_cb, interval = 1):
+		self.request_cb = request_cb
+		self.receive_cb = receive_cb
+		self._interval = interval
+
+		self._timer = None
+
+	def reset(self, position = 0):
+		"""resets pipeline to specified segment and (re)starts pipelining"""
+
+		self._buf = {}
+		self._position = position
+		self._requested = position - 1
+		self.start()
+
+	@property
+	def interval(self):
+		"""The number of seconds we sleep between calls to request_cb"""
+		return self._interval
+
+	@interval.setter
+	def interval(self, value):
+		self._interval = value
+		if self._timer:
+			self._timer.interval = value
+
+	def start(self):
+		if self._timer:
+			self._timer.shutdown()
+
+		self._timer = TaskThread(self._interval, self._request_data)
+		self._timer.start()
+
+	def stop(self):
+		if self._timer:
+			self._timer.shutdown()
+			self._timer = None
+
+	def is_running(self):
+		return self._timer and self._timer.isAlive()
+
+	def put(self, number, data):
+		"""places received data packet in the buffer"""
+
+		if number < self._position:
+			print "%d < %d - dropping" % (number, self._position)
+		else:
+			self._buf[str(number)] = data
+		self._push_out_data()
+
+	def timeout(self, number):
+		"""signals pipeline to skip given packet and move to next one"""
+
+		self.put(number, None)
+
+	@property
+	def position(self):
+		"""returns current position"""
+		if not hasattr(self, '_position'):
+			return -1
+
+		return self._position
+
+	@property
+	def pipeline_size(self):
+		"""returns current number of elements in pipeline"""
+
+		if not hasattr(self, '_position'):
+			return 0
+
+		return self._requested - self._position + 1
+
+	def _adjust(self):
+		goal = 20
+
+	def _request_data(self):
+		self._requested += 1
+		self.request_cb(self._requested)
+
+	def _push_out_data(self):
+		while self._buf.has_key(str(self._position)):
+			data = self._buf[str(self._position)]
+			self.receive_cb(data)
+
+			del self._buf[str(self._position)]
+			self._position += 1
+
 class TCConverter:
 	"""timestamp <--> timecode conversion class"""
 	def __init__(self, framerate):

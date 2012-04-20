@@ -231,18 +231,15 @@ class CCNPacketizer(object):
 				flush = result[1])
 
 class CCNDepacketizer(pyccn.Closure):
-	def __init__(self, uri, window = None, timeout = None, retries = None):
-		# size of the pipeline
-		window = window or 1
-
+	def __init__(self, uri, interval = 1, timeout = 2.0, retries = 1):
 		# amount of time to wait for interest response
-		self.interest_lifetime = timeout or 2.0
+		self.interest_lifetime = timeout
 
 		# how many times to retry request
-		self.interest_retries = retries or 1
+		self.interest_retries = retries
 
 		# maximum number of buffers we can hold in memory waiting to be processed
-		self.queue = Queue.Queue(window * 2)
+		self.queue = Queue.Queue(25)
 
 		#duration of the stream (in nanoseconds)
 		self.duration_ns = None
@@ -262,8 +259,10 @@ class CCNDepacketizer(pyccn.Closure):
 		self._name_segments = self._uri + 'segments'
 		self._name_frames = self._uri + 'index'
 
-		self._pipeline = utils.PipelineFetch(window, self.issue_interest,
-				self.process_response)
+#		self._pipeline = utils.PipelineFetch(window, self.issue_interest,
+#				self.process_response)
+		self._pipeline = utils.PipelineFreqFetch(self.issue_interest,
+				self.process_response, interval)
 		self._segmenter = DataSegmenter(self.push_data)
 
 		self._stats_retries = 0
@@ -541,9 +540,8 @@ class CCNDepacketizer(pyccn.Closure):
 		return pyccn.RESULT_ERR
 
 	def get_status(self):
-		return "Pipeline size: %d/%d Position: %d Retries: %d Drops: %d Duration: %ds" \
-			% (self._pipeline.get_pipeline_size(), self._pipeline.window,
-			self._pipeline.get_position(), self._stats_retries, self._stats_drops,
+		return "Pipeline size: %d interval: %d Position: %d Retries: %d Drops: %d Duration: %ds" \
+			% (self._pipeline.pipeline_size, self._pipeline.interval, self._pipeline.position, self._stats_retries, self._stats_drops,
 			self.duration_ns / gst.SECOND if self.duration_ns else 1.0)
 
 	def ts2index(self, ts):

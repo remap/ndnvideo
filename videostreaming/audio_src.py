@@ -6,9 +6,6 @@ pygst.require("0.10")
 import gst
 import gobject
 
-import Queue, traceback
-import pyccn
-
 from ElementBase import CCNDepacketizer
 
 CMD_SEEK = 1
@@ -41,7 +38,7 @@ class AudioSrc(ElementBase.CCNElementSrc):
 
 	def do_set_property(self, property, value):
 		if property.name == 'location':
-			self.depacketizer = CCNAudioDepacketizer(value, 3)
+			self.depacketizer = CCNAudioDepacketizer(value, 0.1625)
 		else:
 			raise AttributeError, 'unknown property %s' % property.name
 

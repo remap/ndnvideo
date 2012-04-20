@@ -55,7 +55,7 @@ class VideoSrc(ElementBase.CCNElementSrc):
 
 	def do_set_property(self, property, value):
 		if property.name == 'location':
-			self.depacketizer = CCNVideoDepacketizer(value, 18, 1.0)
+			self.depacketizer = CCNVideoDepacketizer(value, 0.03046875)
 		else:
 			raise AttributeError, 'unknown property %s' % property.name
 
