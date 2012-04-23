@@ -483,10 +483,11 @@ class TaskThread(threading.Thread):
 			self._task()
 
 class PipelineFreqFetch(object):
-	def __init__(self, request_cb, receive_cb, interval = 1):
+	def __init__(self, request_cb, receive_cb, interval = 1, max_size = 50):
 		self.request_cb = request_cb
 		self.receive_cb = receive_cb
 		self._interval = interval
+		self._max_size = max_size
 
 		self._timer = None
 
@@ -522,7 +523,7 @@ class PipelineFreqFetch(object):
 			self._timer = None
 
 	def is_running(self):
-		return self._timer and self._timer.isAlive()
+		return self._timer is not None and self._timer.isAlive()
 
 	def put(self, number, data):
 		"""places received data packet in the buffer"""
@@ -555,10 +556,11 @@ class PipelineFreqFetch(object):
 
 		return self._requested - self._position + 1
 
-	def _adjust(self):
-		goal = 20
-
 	def _request_data(self):
+		if self.pipeline_size >= self._max_size:
+			self.stop()
+			return
+
 		self._requested += 1
 		self.request_cb(self._requested)
 
@@ -569,6 +571,9 @@ class PipelineFreqFetch(object):
 
 			del self._buf[str(self._position)]
 			self._position += 1
+
+		if not self.is_running() and self.pipeline_size < self._max_size:
+			self.start()
 
 class TCConverter:
 	"""timestamp <--> timecode conversion class"""

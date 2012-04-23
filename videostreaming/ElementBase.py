@@ -231,7 +231,7 @@ class CCNPacketizer(object):
 				flush = result[1])
 
 class CCNDepacketizer(pyccn.Closure):
-	def __init__(self, uri, interval = 1, timeout = 2.0, retries = 1):
+	def __init__(self, uri, interval = 0.01, timeout = 1.5, retries = 0):
 		# amount of time to wait for interest response
 		self.interest_lifetime = timeout
 
@@ -239,7 +239,7 @@ class CCNDepacketizer(pyccn.Closure):
 		self.interest_retries = retries
 
 		# maximum number of buffers we can hold in memory waiting to be processed
-		self.queue = Queue.Queue(25)
+		self.queue = Queue.Queue(100)
 
 		#duration of the stream (in nanoseconds)
 		self.duration_ns = None
@@ -271,11 +271,10 @@ class CCNDepacketizer(pyccn.Closure):
 		self._tmp_retry_requests = {}
 
 		DurationChecker = type('DurationChecker', (pyccn.Closure,),
-			dict(upcall=self.duration_process_result))
+			dict(upcall = self.duration_process_result))
 		self._duration_callback = DurationChecker()
 
-	def set_window(self, window):
-		self._pipeline.window = window
+		self._data_rate = None
 
 	def fetch_stream_info(self):
 		name = self._uri.append('stream_info')
@@ -287,7 +286,7 @@ class CCNDepacketizer(pyccn.Closure):
 			exit(10)
 
 		ts = co.signedInfo.py_timestamp
-		debug(self, "Got timestamp: %s %f" % (time.ctime(ts),ts))
+		debug(self, "Got timestamp: %s %f" % (time.ctime(ts), ts))
 		self._start_time = ts
 
 		self._caps = gst.caps_from_string(co.content)
@@ -482,8 +481,32 @@ class CCNDepacketizer(pyccn.Closure):
 
 	def process_response(self, co):
 		if not co:
+#			if self._data_rate:
+#				self._data_rate[3] += 1
+			self._data_rate = None
+
 			self._segmenter.packet_lost()
 			return
+
+		n_ts = time.time()
+		n_cts = co.signedInfo.py_timestamp
+		n_diff = n_ts - n_cts
+
+		if self._data_rate:
+			o_interval, o_ts, o_cts, o_segments = self._data_rate
+			o_diff = o_ts - o_cts
+
+			interval_diff = n_diff - o_diff
+			n_interval = self._pipeline.interval - interval_diff / o_segments
+			n_interval = max(0, min(10, n_interval))
+			diff = n_interval - o_interval
+			n_interval = o_interval + 0.0625 * diff
+
+			debug(self, "interval %f diff %f" % (n_interval, interval_diff))
+
+			self._pipeline.interval = n_interval
+
+		self._data_rate = [self._pipeline.interval, n_ts, n_cts, 1]
 
 		self._segmenter.process_packet(co.content)
 
@@ -525,7 +548,7 @@ class CCNDepacketizer(pyccn.Closure):
 				self._tmp_retry_requests[name] -= 1
 				return pyccn.RESULT_REEXPRESS
 
-#			debug(self, "timeout for %r - skipping" % name)
+#			debug(self, "timeout for %r - skipping" % info.Interest.name)
 			self._stats_drops += 1
 			del self._tmp_retry_requests[name]
 			self._pipeline.timeout(pyccn.Name.seg2num(info.Interest.name[-1]))
@@ -540,9 +563,11 @@ class CCNDepacketizer(pyccn.Closure):
 		return pyccn.RESULT_ERR
 
 	def get_status(self):
-		return "Pipeline size: %d interval: %d Position: %d Retries: %d Drops: %d Duration: %ds" \
-			% (self._pipeline.pipeline_size, self._pipeline.interval, self._pipeline.position, self._stats_retries, self._stats_drops,
-			self.duration_ns / gst.SECOND if self.duration_ns else 1.0)
+		return "Pipeline size: %d interval: %f (%d) Position: %d Retries: %d" \
+			" Drops: %d Duration: %ds" \
+			% (self._pipeline.pipeline_size, self._pipeline.interval, self._pipeline.is_running(),
+			self._pipeline.position, self._stats_retries, self._stats_drops,
+			self.duration_ns / gst.SECOND if self.duration_ns else -1.0)
 
 	def ts2index(self, ts):
 		return pyccn.Name.num2seg(ts)
