@@ -154,7 +154,7 @@ class DataSegmenter(object):
 		self._packet_element_off = len(self._packet_content)
 		self._packet_elements = 0
 
-class CCNPacketizer(object):
+class CCNPacketizer(pyccn.Closure):
 	def __init__(self, publisher, uri):
 		freshness = 30 * 60
 
@@ -172,6 +172,7 @@ class CCNPacketizer(object):
 		self._key = pyccn.CCN.getDefaultKey()
 		self._signed_info = pyccn.SignedInfo(self._key.publicKeyID, pyccn.KeyLocator(self._name_key), freshness = freshness)
 		self._signed_info_frames = pyccn.SignedInfo(self._key.publicKeyID, pyccn.KeyLocator(self._name_key), freshness = freshness)
+		self._signed_info_nack = pyccn.SignedInfo(self._key.publicKeyID, pyccn.KeyLocator(self._name_key), pyccn.CONTENT_NACK, freshness = 1)
 
 		self._segmenter = DataSegmenter(self.send_data, self._chunk_size)
 
@@ -179,6 +180,20 @@ class CCNPacketizer(object):
 		co = pyccn.ContentObject(self._name_key, self._key.publicToDER(), signed_info)
 		co.sign(self._key)
 		self.publisher.put(co)
+
+		self._publisher_thread = None
+
+	def start_publish(self):
+		self.handle = pyccn.CCN()
+		self.handle.setInterestFilter(self._name_segments, self)
+		self._publisher_thread = threading.Thread(target = self.handle.run, args = (-1,))
+		self._publisher_thread.daemon = True
+		self._publisher_thread.start()
+
+	def stop_publish(self):
+		self.handle.setRunTimeout(0)
+#		debug(self, "Waiting for publisher thread to finish")
+#		self._publisher_thread.join()
 
 	def set_caps(self, caps):
 		if not self._caps:
@@ -230,6 +245,22 @@ class CCNPacketizer(object):
 		self._segmenter.process_buffer(buffer, start_fresh = result[0],
 				flush = result[1])
 
+	def upcall(self, kind, info):
+		if kind == pyccn.UPCALL_INTEREST:
+			name = info.Interest.name
+			segment = pyccn.Name.seg2num(name[-1])
+			if segment <= self._segment:
+				return pyccn.RESULT_OK
+
+			self._signed_info_nack.finalBlockID = pyccn.Name.num2seg(self._segment - 1)
+			co = pyccn.ContentObject(name, self._segment - 1, self._signed_info_nack)
+			co.sign(self._key)
+			self.handle.put(co)
+
+			return pyccn.RESULT_INTEREST_CONSUMED
+		print kind, info
+		return pyccn.RESULT_OK
+
 class CCNDepacketizer(pyccn.Closure):
 	def __init__(self, uri, window = None, timeout = None, retries = None):
 		# size of the pipeline
@@ -272,7 +303,7 @@ class CCNDepacketizer(pyccn.Closure):
 		self._tmp_retry_requests = {}
 
 		DurationChecker = type('DurationChecker', (pyccn.Closure,),
-			dict(upcall=self.duration_process_result))
+			dict(upcall = self.duration_process_result))
 		self._duration_callback = DurationChecker()
 
 	def set_window(self, window):
@@ -288,7 +319,7 @@ class CCNDepacketizer(pyccn.Closure):
 			exit(10)
 
 		ts = co.signedInfo.py_timestamp
-		debug(self, "Got timestamp: %s %f" % (time.ctime(ts),ts))
+		debug(self, "Got timestamp: %s %f" % (time.ctime(ts), ts))
 		self._start_time = ts
 
 		self._caps = gst.caps_from_string(co.content)

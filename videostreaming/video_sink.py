@@ -94,10 +94,12 @@ class VideoSink(gst.BaseSink):
 			return False
 
 		self.packetizer = CCNVideoPacketizer(self.get_property('repolocation'), self.pr_location)
+		self.packetizer.start_publish()
 		return True
 
 	def do_stop(self):
 		print "Stopping!"
+		self.packetizer.stop_publish()
 		return True
 
 	def do_unlock(self):
