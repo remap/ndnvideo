@@ -43,10 +43,10 @@ def main(args):
 	gobject.threads_init()
 	gtk.gdk.threads_init()
 
-	parser = argparse.ArgumentParser(description = 'Plays audio/video stream.', add_help = False)
+	parser = argparse.ArgumentParser(description = 'Plays audio stream.', add_help = False)
 	parser.add_argument('--player-help', action="help", help = "show this help message and exit")
 	parser.add_argument('-l', '--live', action="store_true", help = 'play in live mode')
-	parser.add_argument('URI', help = 'URI of the video stream')
+	parser.add_argument('URI', help = 'URI of the audio stream')
 
 	cmd_args = parser.parse_args()
 
