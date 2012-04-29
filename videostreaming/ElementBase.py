@@ -231,7 +231,7 @@ class CCNPacketizer(object):
 				flush = result[1])
 
 class CCNDepacketizer(pyccn.Closure):
-	def __init__(self, uri, interval = 0.01, timeout = 1.5, retries = 0):
+	def __init__(self, uri, interval = 0.01, timeout = 2.0, retries = 0):
 		# amount of time to wait for interest response
 		self.interest_lifetime = timeout
 
@@ -239,7 +239,7 @@ class CCNDepacketizer(pyccn.Closure):
 		self.interest_retries = retries
 
 		# maximum number of buffers we can hold in memory waiting to be processed
-		self.queue = Queue.Queue(100)
+		self.queue = Queue.Queue(10)
 
 		#duration of the stream (in nanoseconds)
 		self.duration_ns = None
@@ -259,10 +259,8 @@ class CCNDepacketizer(pyccn.Closure):
 		self._name_segments = self._uri + 'segments'
 		self._name_frames = self._uri + 'index'
 
-#		self._pipeline = utils.PipelineFetch(window, self.issue_interest,
-#				self.process_response)
 		self._pipeline = utils.PipelineFreqFetch(self.issue_interest,
-				self.process_response, interval)
+				self.process_response, self.queue, interval)
 		self._segmenter = DataSegmenter(self.push_data)
 
 		self._stats_retries = 0
@@ -318,11 +316,13 @@ class CCNDepacketizer(pyccn.Closure):
 		return self._caps
 
 	def start(self):
+		assert self._running == False
 		self._receiver_thread = threading.Thread(target = self.run)
 		self._running = True
 		self._receiver_thread.start()
 
 	def stop(self):
+		assert self._running == True
 		self._running = False
 		self.finish_ccn_loop()
 		debug(self, "Waiting for ccn to shutdown ...")
@@ -388,7 +388,7 @@ class CCNDepacketizer(pyccn.Closure):
 
 		while self._running:
 			self.check_duration()
-			self._handle.run(10000)
+			self._handle.run(10000 if self._cmd_q.empty() else 0)
 			self.process_commands()
 
 		debug(self, "Finished running ccn loop")
@@ -481,8 +481,8 @@ class CCNDepacketizer(pyccn.Closure):
 
 	def process_response(self, co):
 		if not co:
-#			if self._data_rate:
-#				self._data_rate[3] += 1
+			if self._data_rate:
+				self._data_rate[3] += 1
 			self._data_rate = None
 
 			self._segmenter.packet_lost()
@@ -498,11 +498,12 @@ class CCNDepacketizer(pyccn.Closure):
 
 			interval_diff = n_diff - o_diff
 			n_interval = self._pipeline.interval - interval_diff / o_segments
-			n_interval = max(0, min(10, n_interval))
+			n_interval = max(0, min(1, n_interval))
 			diff = n_interval - o_interval
-			n_interval = o_interval + 0.0625 * diff
+			n_interval = o_interval + 0.0025 * diff
+#			n_interval = o_interval + 0.0625 * diff
 
-			debug(self, "interval %f diff %f" % (n_interval, interval_diff))
+#			debug(self, "interval %f diff %f" % (n_interval, interval_diff))
 
 			self._pipeline.interval = n_interval
 
@@ -563,10 +564,11 @@ class CCNDepacketizer(pyccn.Closure):
 		return pyccn.RESULT_ERR
 
 	def get_status(self):
-		return "Pipeline size: %d interval: %f (%d) Position: %d Retries: %d" \
+		return "QSize: %2s Pending: %d Interval: %f Segment: %d Retries: %d" \
 			" Drops: %d Duration: %ds" \
-			% (self._pipeline.pipeline_size, self._pipeline.interval, self._pipeline.is_running(),
-			self._pipeline.position, self._stats_retries, self._stats_drops,
+			% (self.queue.qsize(), self._pipeline.pipeline_size,
+			self._pipeline.interval, self._pipeline.position,
+			self._stats_retries, self._stats_drops,
 			self.duration_ns / gst.SECOND if self.duration_ns else -1.0)
 
 	def ts2index(self, ts):
@@ -705,9 +707,29 @@ class CCNElementSrc(gst.BaseSrc):
 	def get_status(self):
 		return self.depacketizer.get_status()
 
+#	def on_pause(self, transition, res):
+#		print "PAUSE!"
+##		self.depacketizer._pipeline.stop()
+#		return res
+#
+#	def on_resume(self, transition, res):
+#		print "RESUME!"
+##		self.depacketizer._pipeline.start()
+#		return res
+#
 #	def do_change_state(self, transition):
-#		print "CHANGE IS INEVITABLE!"
 #		print transition
 #		res = gst.BaseSrc.do_change_state(self, transition)
-#		print res
-#		return gst.STATE_CHANGE_SUCCESS
+#
+#		if transition == gst.STATE_CHANGE_PLAYING_TO_PAUSED:
+#			res = self.on_pause(transition, res)
+#		elif transition == gst.STATE_CHANGE_PAUSED_TO_PLAYING:
+#			res = self.on_resume(transition, res)
+#		else:
+#			print "Unhandled", transition, res
+#
+#		if transition == gst.STATE_CHANGE_READY_TO_PAUSED:
+#			print "no preroll"
+#			return gst.STATE_CHANGE_NO_PREROLL
+#
+#		return res

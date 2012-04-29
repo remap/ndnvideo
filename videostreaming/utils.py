@@ -438,12 +438,15 @@ class PipelineFetch(object):
 
 		self._request_more_data()
 
-class TaskThread(threading.Thread):
-	def __init__(self, interval = 15.0, task = None):
-		threading.Thread.__init__(self)
-		self._finished = threading.Event()
+class PeriodicTimer(threading.Thread):
+	"""
+	This class performs specific task every interval of time.
+	It ignores the execution time of the task.
+	"""
+	def __init__(self, interval):
+		super(PeriodicTimer, self).__init__()
 		self._interval = interval
-		self._task = task
+		self.__finished = threading.Event()
 
 	@property
 	def interval(self):
@@ -465,31 +468,50 @@ class TaskThread(threading.Thread):
 
 	def shutdown(self):
 		"""Stop this thread"""
-		self._finished.set()
+		self.__finished.set()
 
 	def run(self):
-		new_time = time.time()
-		while not self._finished.isSet():
+		self.next_time = time.time()
+		while not self.__finished.isSet():
 			self.task()
-			new_time += self._interval
+			self.next_time += self._interval
 
-			w_time = new_time - time.time()
+			w_time = self.next_time - time.time()
 			if w_time > 0:
-				self._finished.wait(w_time)
+				self.__finished.wait(w_time)
 
 	def task(self):
 		"""The task done by this thread - override in subclasses"""
-		if self._task:
-			self._task()
+		pass
+
+class SleepingPeriodicTimer(PeriodicTimer):
+	"""	Periodic timer that sleeps when specific queue is full"""
+	def __init__(self, interval, queue, task):
+		super(SleepingPeriodicTimer, self).__init__(interval)
+		self._queue = queue
+		self._task = task
+
+	def task(self):
+		self._queue.not_full.acquire()
+		try:
+			if 0 < self._queue.maxsize <= self._queue._qsize():
+				self._queue.not_full.wait()
+				self.next_time = time.time()
+		finally:
+			self._queue.not_full.release()
+
+		self._task()
 
 class PipelineFreqFetch(object):
-	def __init__(self, request_cb, receive_cb, interval = 1, max_size = 50):
+	def __init__(self, request_cb, receive_cb, queue, interval = 1):
 		self.request_cb = request_cb
 		self.receive_cb = receive_cb
+		self._queue = queue
 		self._interval = interval
-		self._max_size = max_size
 
 		self._timer = None
+#		self.reset()
+#		self.start()
 
 	def reset(self, position = 0):
 		"""resets pipeline to specified segment and (re)starts pipelining"""
@@ -514,13 +536,15 @@ class PipelineFreqFetch(object):
 		if self._timer:
 			self._timer.shutdown()
 
-		self._timer = TaskThread(self._interval, self._request_data)
+		self._timer = SleepingPeriodicTimer(self._interval, self._queue, self._request_data)
 		self._timer.start()
+		print "started"
 
 	def stop(self):
 		if self._timer:
 			self._timer.shutdown()
 			self._timer = None
+		print "stopped"
 
 	def is_running(self):
 		return self._timer is not None and self._timer.isAlive()
@@ -557,10 +581,6 @@ class PipelineFreqFetch(object):
 		return self._requested - self._position + 1
 
 	def _request_data(self):
-		if self.pipeline_size >= self._max_size:
-			self.stop()
-			return
-
 		self._requested += 1
 		self.request_cb(self._requested)
 
@@ -571,9 +591,6 @@ class PipelineFreqFetch(object):
 
 			del self._buf[str(self._position)]
 			self._position += 1
-
-		if not self.is_running() and self.pipeline_size < self._max_size:
-			self.start()
 
 class TCConverter:
 	"""timestamp <--> timecode conversion class"""
