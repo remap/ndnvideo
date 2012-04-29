@@ -474,7 +474,7 @@ class CCNDepacketizer(pyccn.Closure):
 		name = self._name_segments.appendSegment(segment)
 
 		#debug(self, "Issuing an interest for: %s" % name)
-		self._tmp_retry_requests[str(name[-1])] = self.interest_retries
+		self._tmp_retry_requests[str(name[-1])] = (self.interest_retries, time.time())
 
 		interest = pyccn.Interest(interestLifetime = self.interest_lifetime)
 		self._handle.expressInterest(name, self, interest)
@@ -513,6 +513,13 @@ class CCNDepacketizer(pyccn.Closure):
 			return pyccn.RESULT_OK
 
 		elif kind == pyccn.UPCALL_CONTENT:
+			name = str(info.Interest.name[-1])
+			n_rtt = time.time() - self._tmp_retry_requests[name][1]
+			n_rtt *= 2
+			diff = n_rtt - self.interest_lifetime
+			self.interest_lifetime += 0.0025 * diff
+			#print "Roundtrip:", n_rtt, self.interest_lifetime
+			del self._tmp_retry_requests[name]
 			self._pipeline.put(pyccn.Name.seg2num(info.ContentObject.name[-1]),
 							info.ContentObject)
 			return pyccn.RESULT_OK
@@ -520,10 +527,14 @@ class CCNDepacketizer(pyccn.Closure):
 		elif kind == pyccn.UPCALL_INTEREST_TIMED_OUT:
 			name = str(info.Interest.name[-1])
 
-			if self._tmp_retry_requests[name]:
+			self.interest_lifetime *= 1.005
+
+			req = self._tmp_retry_requests[name]
+			if req[0]:
 #				debug(self, "timeout for %s - re-expressing" % info.Interest.name)
 				self._stats_retries += 1
-				self._tmp_retry_requests[name] -= 1
+
+				self._tmp_retry_requests[name] = (req[0], time.time())
 				return pyccn.RESULT_REEXPRESS
 
 #			debug(self, "timeout for %r - skipping" % name)
@@ -541,9 +552,9 @@ class CCNDepacketizer(pyccn.Closure):
 		return pyccn.RESULT_ERR
 
 	def get_status(self):
-		return "Pipeline size: %d/%d Position: %d Retries: %d Drops: %d Duration: %ds" \
+		return "Pipeline size: %d/%d Position: %d Timeout: %f Retries: %d Drops: %d Duration: %ds" \
 			% (self._pipeline.get_pipeline_size(), self._pipeline.window,
-			self._pipeline.get_position(), self._stats_retries, self._stats_drops,
+			self._pipeline.get_position(), self.interest_lifetime, self._stats_retries, self._stats_drops,
 			self.duration_ns / gst.SECOND if self.duration_ns else 1.0)
 
 	def ts2index(self, ts):
