@@ -266,13 +266,18 @@ class CCNDepacketizer(pyccn.Closure):
 				self.process_response)
 		self._segmenter = DataSegmenter(self.push_data)
 
+		self._stats = {
+			'srtt': 0.05,
+			'rttvar': 0.01 \
+		}
+
 		self._stats_retries = 0
 		self._stats_drops = 0
 
 		self._tmp_retry_requests = {}
 
 		DurationChecker = type('DurationChecker', (pyccn.Closure,),
-			dict(upcall=self.duration_process_result))
+			dict(upcall = self.duration_process_result))
 		self._duration_callback = DurationChecker()
 
 	def set_window(self, window):
@@ -288,7 +293,7 @@ class CCNDepacketizer(pyccn.Closure):
 			exit(10)
 
 		ts = co.signedInfo.py_timestamp
-		debug(self, "Got timestamp: %s %f" % (time.ctime(ts),ts))
+		debug(self, "Got timestamp: %s %f" % (time.ctime(ts), ts))
 		self._start_time = ts
 
 		self._caps = gst.caps_from_string(co.content)
@@ -515,10 +520,13 @@ class CCNDepacketizer(pyccn.Closure):
 		elif kind == pyccn.UPCALL_CONTENT:
 			name = str(info.Interest.name[-1])
 			n_rtt = time.time() - self._tmp_retry_requests[name][1]
-			n_rtt *= 2
-			diff = n_rtt - self.interest_lifetime
-			self.interest_lifetime += 0.0025 * diff
-			#print "Roundtrip:", n_rtt, self.interest_lifetime
+
+			difference = n_rtt - self._stats['srtt']
+			self._stats['srtt'] += 1 / 128.0 * difference
+			self._stats['rttvar'] += 1 / 64.0 * (abs(difference) - self._stats['rttvar'])
+			self.interest_lifetime = self._stats['srtt'] + 3 * math.sqrt(self._stats['rttvar'])
+			#print "Roundtrip:", n_rtt, self.interest_lifetime, self.interest_lifetime - n_rtt
+
 			del self._tmp_retry_requests[name]
 			self._pipeline.put(pyccn.Name.seg2num(info.ContentObject.name[-1]),
 							info.ContentObject)
@@ -527,7 +535,7 @@ class CCNDepacketizer(pyccn.Closure):
 		elif kind == pyccn.UPCALL_INTEREST_TIMED_OUT:
 			name = str(info.Interest.name[-1])
 
-			self.interest_lifetime *= 1.005
+			self.interest_lifetime = 2.0
 
 			req = self._tmp_retry_requests[name]
 			if req[0]:
@@ -537,7 +545,7 @@ class CCNDepacketizer(pyccn.Closure):
 				self._tmp_retry_requests[name] = (req[0], time.time())
 				return pyccn.RESULT_REEXPRESS
 
-#			debug(self, "timeout for %r - skipping" % name)
+#			debug(self, "timeout for %r - skipping" % info.Interest.name)
 			self._stats_drops += 1
 			del self._tmp_retry_requests[name]
 			self._pipeline.timeout(pyccn.Name.seg2num(info.Interest.name[-1]))
@@ -552,9 +560,9 @@ class CCNDepacketizer(pyccn.Closure):
 		return pyccn.RESULT_ERR
 
 	def get_status(self):
-		return "Pipeline size: %d/%d Position: %d Timeout: %f Retries: %d Drops: %d Duration: %ds" \
+		return "Pipeline size: %d/%d Segment: %d Timeout: %f (%f, %f) Retries: %d Drops: %d Duration: %ds" \
 			% (self._pipeline.get_pipeline_size(), self._pipeline.window,
-			self._pipeline.get_position(), self.interest_lifetime, self._stats_retries, self._stats_drops,
+			self._pipeline.get_position(), self.interest_lifetime, self._stats['srtt'], self._stats['rttvar'], self._stats_retries, self._stats_drops,
 			self.duration_ns / gst.SECOND if self.duration_ns else 1.0)
 
 	def ts2index(self, ts):
