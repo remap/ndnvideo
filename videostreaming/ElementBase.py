@@ -263,6 +263,11 @@ class CCNDepacketizer(pyccn.Closure):
 				self.process_response, self.queue, interval)
 		self._segmenter = DataSegmenter(self.push_data)
 
+		self._stats = {
+			'srtt': 0.05,
+			'rttvar': 0.01 \
+		}
+
 		self._stats_retries = 0
 		self._stats_drops = 0
 
@@ -472,7 +477,7 @@ class CCNDepacketizer(pyccn.Closure):
 		name = self._name_segments.appendSegment(segment)
 
 		#debug(self, "Issuing an interest for: %s" % name)
-		self._tmp_retry_requests[str(name[-1])] = self.interest_retries
+		self._tmp_retry_requests[str(name[-1])] = (self.interest_retries, time.time())
 
 		interest = pyccn.Interest(interestLifetime = self.interest_lifetime)
 		self._handle.expressInterest(name, self, interest)
@@ -536,6 +541,16 @@ class CCNDepacketizer(pyccn.Closure):
 			return pyccn.RESULT_OK
 
 		elif kind == pyccn.UPCALL_CONTENT:
+			name = str(info.Interest.name[-1])
+			n_rtt = time.time() - self._tmp_retry_requests[name][1]
+
+			difference = n_rtt - self._stats['srtt']
+			self._stats['srtt'] += 1 / 128.0 * difference
+			self._stats['rttvar'] += 1 / 64.0 * (abs(difference) - self._stats['rttvar'])
+			self.interest_lifetime = self._stats['srtt'] + 3 * math.sqrt(self._stats['rttvar'])
+			#print "Roundtrip:", n_rtt, self.interest_lifetime, self.interest_lifetime - n_rtt
+
+			del self._tmp_retry_requests[name]
 			self._pipeline.put(pyccn.Name.seg2num(info.ContentObject.name[-1]),
 							info.ContentObject)
 			return pyccn.RESULT_OK
@@ -543,10 +558,14 @@ class CCNDepacketizer(pyccn.Closure):
 		elif kind == pyccn.UPCALL_INTEREST_TIMED_OUT:
 			name = str(info.Interest.name[-1])
 
-			if self._tmp_retry_requests[name]:
+			self.interest_lifetime = 2.0
+
+			req = self._tmp_retry_requests[name]
+			if req[0]:
 #				debug(self, "timeout for %s - re-expressing" % info.Interest.name)
 				self._stats_retries += 1
-				self._tmp_retry_requests[name] -= 1
+
+				self._tmp_retry_requests[name] = (req[0], time.time())
 				return pyccn.RESULT_REEXPRESS
 
 #			debug(self, "timeout for %r - skipping" % info.Interest.name)
@@ -564,10 +583,11 @@ class CCNDepacketizer(pyccn.Closure):
 		return pyccn.RESULT_ERR
 
 	def get_status(self):
-		return "QSize: %2s Pending: %d Interval: %f Segment: %d Retries: %d" \
-			" Drops: %d Duration: %ds" \
+		return "QSize: %2s Pending: %d Interval: %f Segment: %d" \
+			" Timeout: %f (%f, %f) Retries: %d Drops: %d Duration: %ds" \
 			% (self.queue.qsize(), self._pipeline.pipeline_size,
 			self._pipeline.interval, self._pipeline.position,
+			self.interest_lifetime, self._stats['srtt'], self._stats['rttvar'],
 			self._stats_retries, self._stats_drops,
 			self.duration_ns / gst.SECOND if self.duration_ns else -1.0)
 
@@ -720,16 +740,5 @@ class CCNElementSrc(gst.BaseSrc):
 #	def do_change_state(self, transition):
 #		print transition
 #		res = gst.BaseSrc.do_change_state(self, transition)
-#
-#		if transition == gst.STATE_CHANGE_PLAYING_TO_PAUSED:
-#			res = self.on_pause(transition, res)
-#		elif transition == gst.STATE_CHANGE_PAUSED_TO_PLAYING:
-#			res = self.on_resume(transition, res)
-#		else:
-#			print "Unhandled", transition, res
-#
-#		if transition == gst.STATE_CHANGE_READY_TO_PAUSED:
-#			print "no preroll"
-#			return gst.STATE_CHANGE_NO_PREROLL
-#
-#		return res
+#		print res
+#		return gst.STATE_CHANGE_SUCCESS
