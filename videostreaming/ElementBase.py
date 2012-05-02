@@ -231,7 +231,7 @@ class CCNPacketizer(object):
 				flush = result[1])
 
 class CCNDepacketizer(pyccn.Closure):
-	def __init__(self, uri, interval = 0.01, timeout = 2.0, retries = 0):
+	def __init__(self, uri, interval = 0.01, timeout = 2.0, retries = 1):
 		# amount of time to wait for interest response
 		self.interest_lifetime = timeout
 
@@ -545,8 +545,8 @@ class CCNDepacketizer(pyccn.Closure):
 			n_rtt = time.time() - self._tmp_retry_requests[name][1]
 
 			difference = n_rtt - self._stats['srtt']
-			self._stats['srtt'] += 1 / 128.0 * difference
-			self._stats['rttvar'] += 1 / 64.0 * (abs(difference) - self._stats['rttvar'])
+			self._stats['srtt'] += 1 / 8.0 * difference
+			self._stats['rttvar'] += 1 / 4.0 * (abs(difference) - self._stats['rttvar'])
 			self.interest_lifetime = self._stats['srtt'] + 3 * math.sqrt(self._stats['rttvar'])
 			#print "Roundtrip:", n_rtt, self.interest_lifetime, self.interest_lifetime - n_rtt
 
@@ -558,7 +558,7 @@ class CCNDepacketizer(pyccn.Closure):
 		elif kind == pyccn.UPCALL_INTEREST_TIMED_OUT:
 			name = str(info.Interest.name[-1])
 
-			self.interest_lifetime = 2.0
+			self._stats['srtt'] *= 1.2
 
 			req = self._tmp_retry_requests[name]
 			if req[0]:
