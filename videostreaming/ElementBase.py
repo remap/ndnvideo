@@ -10,8 +10,8 @@ import utils
 
 __all__ = ["CCNPacketizer", "CCNDepacketizer"]
 
-# left, offset, element count
-packet_hdr = "!BHB"
+# offset, element count
+packet_hdr = "!HB"
 packet_hdr_len = struct.calcsize(packet_hdr)
 
 # size, timestamp, duration
@@ -66,7 +66,7 @@ class DataSegmenter(object):
 		assert self._max_size, "You can't use process_buffer without defining max_size"
 
 		if start_fresh and len(self._packet_content) > 0:
-			self.perform_send_callback(0)
+			self.perform_send_callback()
 
 		segment = self.buffer2segment(buffer)
 		self._packet_content.extend(segment)
@@ -76,35 +76,13 @@ class DataSegmenter(object):
 				/ float(self._max_size)))
 
 		while nochunks >= 2:
-			#assert(nochunks > 0)
 			packet_size = min(self._max_size, len(self._packet_content))
 			nochunks -= 1
-			self.perform_send_callback(nochunks, packet_size)
+			self.perform_send_callback(packet_size)
 		assert(nochunks == 1)
 
 		if len(self._packet_content) == self._max_size or flush:
-			self.perform_send_callback(0)
-
-	def process_buffer_split(self, buffer):
-		global packet_hdr
-
-		segment = self.buffer2segment(buffer)
-		segment_size = len(segment)
-
-		nochunks = int(math.ceil(segment_size / float(self._max_size)))
-
-		data_off = 0
-		while data_off < segment_size:
-			assert(nochunks > 0)
-
-			data_size = min(self._max_size, segment_size - data_off)
-			chunk = segment[data_off:data_off + data_size]
-			data_off += data_size
-
-			nochunks -= 1
-			header = struct.pack(packet_hdr, nochunks, 0, 0)
-			self._callback(header + chunk)
-		assert(nochunks == 0)
+			self.perform_send_callback()
 
 	def packet_lost(self):
 		self._packet_lost = True
@@ -115,8 +93,13 @@ class DataSegmenter(object):
 		global packet_hdr, packet_hdr_len
 
 		header = packet[:packet_hdr_len]
-		left, offset, count = struct.unpack(packet_hdr, header)
+		offset, count = struct.unpack(packet_hdr, header)
 
+		#skip packets that don't have beginning (offset is meaningless)
+		if self._packet_lost and count == 0:
+			return
+
+		#for continuation assume offset is 0 (use data we already received)
 		if not self._packet_lost or len(self._packet_content) > 0:
 			offset = 0
 
@@ -137,17 +120,17 @@ class DataSegmenter(object):
 
 			self._callback(buf)
 			self._packet_elements -= 1
-		assert (left > 0 and self._packet_elements == 1) or self._packet_elements == 0, "left = %d, packet_elements = %d" % (left, self._packet_elements)
-		#assert self._packet_elements <= 1, "packet_elements %d" % self._packet_elements
+		#assert (left > 0 and self._packet_elements == 1) or self._packet_elements == 0, "left = %d, packet_elements = %d" % (left, self._packet_elements)
+		assert self._packet_elements <= 1, "packet_elements %d" % self._packet_elements
 
 		self._packet_content = self._packet_content[off:]
 
-	def perform_send_callback(self, left, size = None):
+	def perform_send_callback(self, size = None):
 		if size is None:
 			size = len(self._packet_content)
 
-		header = struct.pack(packet_hdr, left, self._packet_element_off, \
-				self._packet_elements)
+		offset = 0 if self._packet_elements == 0 else self._packet_element_off
+		header = struct.pack(packet_hdr, offset, self._packet_elements)
 
 		self._callback(header + bytes(self._packet_content[:size]))
 		self._packet_content = self._packet_content[size:]
@@ -409,7 +392,10 @@ class CCNDepacketizer(pyccn.Closure):
 			return
 
 		if cmd[0] == CMD_SEEK:
-			tc, segment = self.fetch_seek_query(cmd[1])
+			if cmd[1] == 0:
+				tc, segment = 0, 0 #streaming always starts from segment 0
+			else:
+				tc, segment = self.fetch_seek_query(cmd[1])
 			debug(self, "Seeking to segment %d [%s]" % (segment, tc))
 			self._seek_segment = True
 			self._segmenter.packet_lost()
