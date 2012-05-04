@@ -37,7 +37,7 @@ class DataSegmenter(object):
 
 	@staticmethod
 	def buffer2segment(buffer):
-		global segment_hdr, segment_hdr_len
+		global segment_hdr
 
 		return struct.pack(segment_hdr, buffer.size, buffer.timestamp, \
 				buffer.duration) + buffer.data
@@ -52,7 +52,7 @@ class DataSegmenter(object):
 		header = bytes(segment[offset:offset + segment_hdr_len])
 		size, timestamp, duration = struct.unpack(segment_hdr, header)
 		start = offset + segment_hdr_len
-		end = offset + segment_hdr_len + size
+		end = start + size
 
 		if end > len(segment):
 			return None, offset
@@ -68,8 +68,8 @@ class DataSegmenter(object):
 		if start_fresh and len(self._packet_content) > 0:
 			self.perform_send_callback()
 
-		segment = self.buffer2segment(buffer)
-		self._packet_content.extend(segment)
+		element = self.buffer2segment(buffer)
+		self._packet_content.extend(element)
 		self._packet_elements += 1
 
 		nochunks = int(math.ceil(len(self._packet_content) \
@@ -84,6 +84,18 @@ class DataSegmenter(object):
 		if len(self._packet_content) == self._max_size or flush:
 			self.perform_send_callback()
 
+	def perform_send_callback(self, size = None):
+		if size is None:
+			size = len(self._packet_content)
+
+		offset = 0 if self._packet_elements == 0 else self._packet_element_off
+		header = struct.pack(packet_hdr, offset, self._packet_elements)
+
+		self._callback(header + bytes(self._packet_content[:size]))
+		self._packet_content = self._packet_content[size:]
+		self._packet_element_off = len(self._packet_content)
+		self._packet_elements = 0
+
 	def packet_lost(self):
 		self._packet_lost = True
 		self._packet_content = bytearray()
@@ -97,11 +109,18 @@ class DataSegmenter(object):
 
 		#skip packets that don't have beginning (offset is meaningless)
 		if self._packet_lost and count == 0:
+			assert self._packet_elements == 0 and len(self._packet_content) == 0
 			return
 
 		#for continuation assume offset is 0 (use data we already received)
 		if not self._packet_lost or len(self._packet_content) > 0:
 			offset = 0
+
+		if self._packet_lost:
+			self._packet_lost = False
+			discont = True
+		else:
+			discont = False
 
 		offset += packet_hdr_len
 		self._packet_content.extend(packet[offset:])
@@ -114,9 +133,9 @@ class DataSegmenter(object):
 			if buf is None:
 				break
 
-			if self._packet_lost:
+			if discont:
+				discont = False
 				buf.flag_set(gst.BUFFER_FLAG_DISCONT)
-				self._packet_lost = False
 
 			self._callback(buf)
 			self._packet_elements -= 1
@@ -124,18 +143,6 @@ class DataSegmenter(object):
 		assert self._packet_elements <= 1, "packet_elements %d" % self._packet_elements
 
 		self._packet_content = self._packet_content[off:]
-
-	def perform_send_callback(self, size = None):
-		if size is None:
-			size = len(self._packet_content)
-
-		offset = 0 if self._packet_elements == 0 else self._packet_element_off
-		header = struct.pack(packet_hdr, offset, self._packet_elements)
-
-		self._callback(header + bytes(self._packet_content[:size]))
-		self._packet_content = self._packet_content[size:]
-		self._packet_element_off = len(self._packet_content)
-		self._packet_elements = 0
 
 class CCNPacketizer(object):
 	def __init__(self, publisher, uri):
@@ -570,7 +577,7 @@ class CCNDepacketizer(pyccn.Closure):
 
 	def get_status(self):
 		return "QSize: %2s Pending: %d Interval: %f Segment: %d" \
-			" Timeout: %f (%f, %f) Retries: %d Drops: %d Duration: %ds" \
+			" Timeout: %.3f (%.3f, %.3f) Retries: %d Drops: %d Duration: %ds" \
 			% (self.queue.qsize(), self._pipeline.pipeline_size,
 			self._pipeline.interval, self._pipeline.position,
 			self.interest_lifetime, self._stats['srtt'], self._stats['rttvar'],
