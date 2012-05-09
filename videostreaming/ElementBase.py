@@ -575,18 +575,49 @@ class CCNElementSrc(gst.BaseSrc):
 			gst.caps_new_any()),
 		)
 
-	def __init__(self):
+	__gproperties__ = {
+		'location' : (gobject.TYPE_STRING, 'CCNx location',
+			'location of the stream in CCNx network',
+			'', gobject.PARAM_READWRITE),
+		'is-live' : (gobject.TYPE_BOOLEAN, 'live stream',
+			'whether to act as a live source',
+			False, gobject.PARAM_READWRITE)
+	}
+
+	def __init__(self, depacketizer_cls):
 		gst.BaseSrc.__init__(self)
-		self.depacketizer = None
+
+		self._depacketizer_cls = depacketizer_cls
+
 		self.set_format(gst.FORMAT_TIME)
+		self._depacketizer = None
 		self.seek_in_progress = None
 		self._no_locking = False
 
+		self._prop = {}
+		self._prop['location'] = ''
+		self._prop['is-live'] = False
+
+	def do_get_property(self, property):
+		if property.name in self._prop:
+			return self._prop[property.name]
+		raise AttributeError, 'unknown property %s' % property.name
+
+	def do_set_property(self, property, value):
+		if property.name in self._prop:
+			self._prop[property.name] = value
+			return
+		raise AttributeError, 'unknown property %s' % property.name
+
+	@property
+	def depacketizer(self):
+		if not self._depacketizer:
+			self._depacketizer = self._depacketizer_cls(self._prop['location'], 18)
+		return self._depacketizer
+
 	def do_get_caps(self):
 		debug(self, "Called do_get_caps")
-		if self.depacketizer:
-			return self.depacketizer.get_caps()
-		return None
+		return self.depacketizer.get_caps()
 
 	def do_start(self):
 		debug(self, "Called start")
@@ -600,7 +631,7 @@ class CCNElementSrc(gst.BaseSrc):
 
 	def do_is_seekable(self):
 		debug(self, "is seekable")
-		return True
+		return not self._prop['is-live']
 
 #	def do_event(self, event):
 #		if event.type == gst.EVENT_QOS:

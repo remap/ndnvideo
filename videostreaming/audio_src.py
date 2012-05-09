@@ -24,26 +24,10 @@ class AudioSrc(ElementBase.CCNElementSrc):
 	__gstdetails__ = ("CCN Audio Source", "Source/Network",
 		"Receives audio data over a CCNx network", "Derek Kulinski <takeda@takeda.tk>")
 
-	__gsttemplates__ = (
-		gst.PadTemplate("src",
-			gst.PAD_SRC,
-			gst.PAD_ALWAYS,
-			gst.caps_new_any()),
-		)
+	__gsttemplates__ = ElementBase.CCNElementSrc.__gsttemplates__
 
-	__gproperties__ = {
-		'location' : (gobject.TYPE_STRING,
-			'CCNx location',
-			'location of the stream in CCNx network',
-			'',
-			gobject.PARAM_READWRITE)
-	}
-
-	def do_set_property(self, property, value):
-		if property.name == 'location':
-			self.depacketizer = CCNAudioDepacketizer(value, 3)
-		else:
-			raise AttributeError, 'unknown property %s' % property.name
+	def __init__(self):
+		super(AudioSrc, self).__init__(CCNAudioDepacketizer)
 
 gst.element_register(AudioSrc, 'AudioSrc')
 

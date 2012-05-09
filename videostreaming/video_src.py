@@ -36,28 +36,13 @@ class CCNVideoDepacketizer(CCNDepacketizer):
 class VideoSrc(ElementBase.CCNElementSrc):
 	__gtype_name__ = 'VideoSrc'
 	__gstdetails__ = ("CCN Video Source", "Source/Network",
-		"Receives video data over a CCNx network", "Derek Kulinski <takeda@takeda.tk>")
+		"Receives video data over a CCNx network",
+		"Derek Kulinski <takeda@takeda.tk>")
 
-	__gsttemplates__ = (
-		gst.PadTemplate("src",
-			gst.PAD_SRC,
-			gst.PAD_ALWAYS,
-			gst.caps_new_any()),
-		)
+	__gsttemplates__ = ElementBase.CCNElementSrc.__gsttemplates__
 
-	__gproperties__ = {
-		'location' : (gobject.TYPE_STRING,
-			'CCNx location',
-			'location of the stream in CCNx network',
-			'',
-			gobject.PARAM_READWRITE)
-	}
-
-	def do_set_property(self, property, value):
-		if property.name == 'location':
-			self.depacketizer = CCNVideoDepacketizer(value, 18, 1.0)
-		else:
-			raise AttributeError, 'unknown property %s' % property.name
+	def __init__(self):
+		super(VideoSrc, self).__init__(CCNVideoDepacketizer)
 
 	def do_set_state(self, state):
 		print "CHANGING STATE %s" % state
