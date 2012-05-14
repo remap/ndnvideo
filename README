@@ -29,20 +29,26 @@ publishing local video:
 make sure CCNR_DIRECTORY is set and sourced (we recommend to define it in ~/.profile)
 make sure ccnd & ccnr (your local repo) are running, and are routed (for others to access)
 
-if you don't have a working video URI, make one with video_sink:
-
-python video_sink.py [desired URI]
-
-then you have a URI you can play via above. It auto-selects first video device.
-
-
 note:  you may need to manually create CCNR_DIRECTORY/import/ directory
 
 
-pending:
+if you don't have a working video URI, there are a few options:
 
-instructions on how to use a file, rather than a capture device, to create a stream
+1) python video_sink.py [desired URI]
 
+then you have a URI you can play via above. It auto-selects first video device.
+
+another option is 
+2) the more featured 'publish' script:
+
+python ./publish.py [URI] m
+
+as of writing, this uses /dev/video0.
+
+yet another option is to use a file instead of a capture device:
+3) ./ccn_launch.py filesrc location=[filename.mp4] ! typefind ! qtdemux name=mux \
+mux.video_00 ! queue ! VideoSink location=/repo/test/mainvideo/video \
+mux.audio_00 ! queue ! AudioSink location=/repo/test/mainvideo/audio
 
 Troubleshooting:
 
@@ -57,12 +63,13 @@ gst-launch -v -m autovideosrc ! xvimagesink
 
 if this doesn't work, try 
 xvinfo
-if you don't have any adapters… you'll need a better video card and driver - in which case you can likely use ximagesink.
+if you don't have any adapters… you can likely use ximagesink.
 
 however you may need to videoscale to specific supported size listed by: 
 
 gst-inspect ximagesink
 
+can also try:
 
 ./ccn_launch.py VideoSrc location=/ndn/ucla.edu/apps/video/hydra/ ! \
    ffdec_h264 ! aasink

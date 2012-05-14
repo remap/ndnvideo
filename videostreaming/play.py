@@ -65,8 +65,6 @@ def main():
 		print "No content found at %s" % cmd_args.URI
 		return 1
 
-	name = name + "mainvideo"
-
 	w = player_gui.PlayerWindow(GstPlayer, cmd_args)
 	w.load_file(str(name))
 	w.show_all()
