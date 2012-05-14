@@ -37,6 +37,11 @@ class DataSegmenter(object):
 
 	@staticmethod
 	def buffer2segment(buffer):
+		"""
+		Converts a single buffer into segment
+		(with all necessary information to restore it)
+		"""
+
 		global segment_hdr
 
 		return struct.pack(segment_hdr, buffer.size, buffer.timestamp, \
@@ -44,6 +49,11 @@ class DataSegmenter(object):
 
 	@staticmethod
 	def segment2buffer(segment, offset):
+		"""
+		Converts a segment into buffer. It is capable of working on incomplete
+		segments, returns buffer and offset for next segment.
+		If not enough data is available it returns None and the supplied offset
+		"""
 		global segment_hdr, segment_hdr_len
 
 		if len(segment) - offset < segment_hdr_len:
@@ -63,7 +73,8 @@ class DataSegmenter(object):
 		return buf, end
 
 	def process_buffer(self, buffer, start_fresh = False, flush = False):
-		assert self._max_size, "You can't use process_buffer without defining max_size"
+		assert self._max_size, "You can't use process_buffer without \
+				defining max_size"
 
 		if start_fresh and len(self._packet_content) > 0:
 			self.perform_send_callback()
@@ -101,7 +112,7 @@ class DataSegmenter(object):
 		self._packet_content = bytearray()
 		self._packet_elements = 0
 
-	def process_packet(self, packet):
+	def process_packet(self, timestamp, packet):
 		global packet_hdr, packet_hdr_len
 
 		header = packet[:packet_hdr_len]
@@ -137,7 +148,7 @@ class DataSegmenter(object):
 				discont = False
 				buf.flag_set(gst.BUFFER_FLAG_DISCONT)
 
-			self._callback(buf)
+			self._callback(timestamp, buf)
 			self._packet_elements -= 1
 		#assert (left > 0 and self._packet_elements == 1) or self._packet_elements == 0, "left = %d, packet_elements = %d" % (left, self._packet_elements)
 		assert self._packet_elements <= 1, "packet_elements %d" % self._packet_elements
@@ -221,12 +232,9 @@ class CCNPacketizer(object):
 				flush = result[1])
 
 class CCNDepacketizer(pyccn.Closure):
-	def __init__(self, uri, window = None, timeout = None, retries = None):
+	def __init__(self, uri, window = None, retries = None):
 		# size of the pipeline
 		window = window or 1
-
-		# amount of time to wait for interest response
-		self.interest_lifetime = timeout or 2.0
 
 		# how many times to retry request
 		self.interest_retries = retries or 1
@@ -234,12 +242,19 @@ class CCNDepacketizer(pyccn.Closure):
 		# maximum number of buffers we can hold in memory waiting to be processed
 		self.queue = Queue.Queue(window * 2)
 
-		#duration of the stream (in nanoseconds)
+		# duration of the stream (in nanoseconds)
 		self.duration_ns = None
 
-		#
+		# interest timeout
+		self.interest_lifetime = None
+
+		# whether fetching thread is running
 		self._running = False
+
+		# caps of the stream
 		self._caps = None
+
+		# timestamp of the remote machine
 		self._start_time = None
 		self._seek_segment = None
 		self._duration_last = None
@@ -272,9 +287,6 @@ class CCNDepacketizer(pyccn.Closure):
 		DurationChecker = type('DurationChecker', (pyccn.Closure,),
 			dict(upcall = self.duration_process_result))
 		self._duration_callback = DurationChecker()
-
-	def set_window(self, window):
-		self._pipeline.window = window
 
 	def fetch_stream_info(self):
 		name = self._uri.append('stream_info')
@@ -487,9 +499,11 @@ class CCNDepacketizer(pyccn.Closure):
 			self._segmenter.packet_lost()
 			return
 
-		self._segmenter.process_packet(co.content)
+		timestamp = co.signedInfo.py_timestamp
 
-	def push_data(self, buf):
+		self._segmenter.process_packet(timestamp, co.content)
+
+	def push_data(self, timestamp, buf):
 		status = 0
 
 		# Marking jump due to seeking
@@ -500,7 +514,7 @@ class CCNDepacketizer(pyccn.Closure):
 
 		while True:
 			try:
-				self.queue.put((status, buf), True, 1)
+				self.queue.put((status, timestamp, buf), True, 1)
 				break
 			except Queue.Full:
 				if not self._running:
@@ -531,7 +545,7 @@ class CCNDepacketizer(pyccn.Closure):
 		elif kind == pyccn.UPCALL_INTEREST_TIMED_OUT:
 			name = str(info.Interest.name[-1])
 
-			self.interest_lifetime = 2.0
+			self.interest_lifetime = None
 
 			req = self._tmp_retry_requests[name]
 			if req[0]:
@@ -558,7 +572,9 @@ class CCNDepacketizer(pyccn.Closure):
 	def get_status(self):
 		return "PSize: %d/%d Segment: %d Timeout: %.3f (%.3f, %.3f) Retries: %d Drops: %d Duration: %ds" \
 			% (self._pipeline.get_pipeline_size(), self._pipeline.window,
-			self._pipeline.get_position(), self.interest_lifetime, self._stats['srtt'], self._stats['rttvar'], self._stats_retries, self._stats_drops,
+			self._pipeline.get_position(), self.interest_lifetime or - 1,
+			self._stats['srtt'], self._stats['rttvar'], self._stats_retries,
+			self._stats_drops,
 			self.duration_ns / gst.SECOND if self.duration_ns else 1.0)
 
 	def ts2index(self, ts):
@@ -651,7 +667,7 @@ class CCNElementSrc(gst.BaseSrc):
 		try:
 			while True:
 				try:
-					status, buffer = self.depacketizer.queue.get(True, 1)
+					status, timestamp, buffer = self.depacketizer.queue.get(True, 1)
 					#print "%d %d %d %s" % (buffer.timestamp, buffer.duration, buffer.flags, buffer.caps)
 				except Queue.Empty:
 					if self._no_locking:
