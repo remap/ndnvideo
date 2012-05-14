@@ -27,7 +27,7 @@ class AudioSrc(ElementBase.CCNElementSrc):
 	__gsttemplates__ = ElementBase.CCNElementSrc.__gsttemplates__
 
 	def __init__(self):
-		super(AudioSrc, self).__init__(CCNAudioDepacketizer)
+		super(AudioSrc, self).__init__(CCNAudioDepacketizer, 3)
 
 gst.element_register(AudioSrc, 'AudioSrc')
 

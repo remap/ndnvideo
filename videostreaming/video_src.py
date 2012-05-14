@@ -42,7 +42,7 @@ class VideoSrc(ElementBase.CCNElementSrc):
 	__gsttemplates__ = ElementBase.CCNElementSrc.__gsttemplates__
 
 	def __init__(self):
-		super(VideoSrc, self).__init__(CCNVideoDepacketizer)
+		super(VideoSrc, self).__init__(CCNVideoDepacketizer, 18)
 
 	def do_set_state(self, state):
 		print "CHANGING STATE %s" % state

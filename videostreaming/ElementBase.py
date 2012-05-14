@@ -603,10 +603,11 @@ class CCNElementSrc(gst.BaseSrc):
 			False, gobject.PARAM_READWRITE)
 	}
 
-	def __init__(self, depacketizer_cls):
+	def __init__(self, depacketizer_cls, window = None):
 		gst.BaseSrc.__init__(self)
 
 		self._depacketizer_cls = depacketizer_cls
+		self._window = window or 1
 
 		self.set_format(gst.FORMAT_TIME)
 		self._depacketizer = None
@@ -631,7 +632,7 @@ class CCNElementSrc(gst.BaseSrc):
 	@property
 	def depacketizer(self):
 		if not self._depacketizer:
-			self._depacketizer = self._depacketizer_cls(self._prop['location'], 18)
+			self._depacketizer = self._depacketizer_cls(self._prop['location'], self._window)
 		return self._depacketizer
 
 	def do_get_caps(self):
