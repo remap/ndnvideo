@@ -2,7 +2,7 @@ import pygst
 pygst.require('0.10')
 import gst
 
-import struct, time, Queue, bisect, threading, math, os, platform, random
+import struct, time, Queue, bisect, threading, math, os, platform, random, socket
 from operator import itemgetter
 import pyccn
 from pyccn import _pyccn
@@ -49,7 +49,6 @@ def framerate2str(framerate):
 	return fr_str
 
 class RepoPublisher(pyccn.Closure):
-
 	def __init__(self, handle, prefix, repo_loc = None):
 		self._sequence = 0;
 
@@ -82,6 +81,22 @@ class RepoPublisher(pyccn.Closure):
 
 	def upcall(self, kind, info):
 		return pyccn.RESULT_OK
+
+class RepoSocketPublisher(pyccn.Closure):
+	def __init__(self, repo_port = None):
+		if not repo_port:
+			if not os.environ.has_key('CCNR_STATUS_PORT'):
+				raise Exception("CCNR_STATUS_PORT not defined and no repo port specified")
+
+			repo_port = os.environ['CCNR_STATUS_PORT']
+
+		self.repo_dest = ('127.0.0.1', int(repo_port))
+
+	def put(self, content):
+		sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+		sock.connect(self.repo_dest)
+		sock.send(_pyccn.dump_charbuf(content.ccn_data))
+		sock.close()
 
 class RingBuffer:
 	def __init__(self, size):
