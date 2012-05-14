@@ -264,6 +264,9 @@ class CCNDepacketizer(pyccn.Closure):
 		self._stats_retries = 0
 		self._stats_drops = 0
 
+		self._timing_clock_diff = None
+		self._timing_pause_diff = 0
+
 		self._tmp_retry_requests = {}
 
 		DurationChecker = type('DurationChecker', (pyccn.Closure,),
@@ -630,7 +633,7 @@ class CCNElementSrc(gst.BaseSrc):
 		return True
 
 	def do_is_seekable(self):
-		debug(self, "is seekable")
+		debug(self, "Called is_seekable")
 		return not self._prop['is-live']
 
 #	def do_event(self, event):
@@ -725,9 +728,11 @@ class CCNElementSrc(gst.BaseSrc):
 	def get_status(self):
 		return self.depacketizer.get_status()
 
-#	def do_change_state(self, transition):
-#		print "CHANGE IS INEVITABLE!"
-#		print transition
-#		res = gst.BaseSrc.do_change_state(self, transition)
-#		print res
-#		return gst.STATE_CHANGE_SUCCESS
+	def do_change_state(self, transition):
+		res = gst.BaseSrc.do_change_state(self, transition)
+
+		# Disable preroll for live stream
+		if self._prop['is-live'] and transition == gst.STATE_CHANGE_PAUSED_TO_PLAYING and res == gst.STATE_CHANGE_SUCCESS:
+			res = gst.STATE_CHANGE_NO_PREROLL
+
+		return res

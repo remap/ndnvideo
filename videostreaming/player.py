@@ -14,7 +14,7 @@ def get_latest_version(name):
 	i = pyccn.Interest(childSelector = 1, answerOriginKind = pyccn.AOK_NONE)
 
 	handle = pyccn.CCN()
-	co = handle.get(n,i)
+	co = handle.get(n, i)
 	if co is None:
 		return None
 
@@ -164,13 +164,13 @@ class GstPlayer(gobject.GObject):
 				return
 
 			print "Got message:", bus, message
-		
+
 			duration = self.src.query_duration()
 			bus.disconnect(handle)
 			bus.remove_signal_watch()
 			self.seek(duration)
 			self.real_play()
-	
+
 		bus = self.player.get_bus()
 		handle = bus.connect('message', on_message)
 		bus.add_signal_watch()
