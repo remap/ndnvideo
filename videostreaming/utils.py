@@ -92,11 +92,12 @@ class RepoSocketPublisher(pyccn.Closure):
 
 		self.repo_dest = ('127.0.0.1', int(repo_port))
 
+		self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+		self.sock.connect(self.repo_dest)
+
 	def put(self, content):
-		sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-		sock.connect(self.repo_dest)
-		sock.send(_pyccn.dump_charbuf(content.ccn_data))
-		sock.close()
+		self.sock.send(_pyccn.dump_charbuf(content.ccn_data))
+#		self.sock.flush()
 
 class RingBuffer:
 	def __init__(self, size):
