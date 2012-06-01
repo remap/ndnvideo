@@ -19,8 +19,8 @@ from video_src import VideoSrc
 class GstPlayer(player.GstPlayer):
 	__pipeline = """
 		multiqueue name=mqueue use-buffering=true
-		identity name=video_input ! ffdec_h264 ! mqueue. mqueue. ! %(video)s
-		identity name=audio_input ! ffdec_mp3 ! mqueue. mqueue. ! %(audio)s
+		identity name=video_input ! ffdec_h264 ! mqueue. mqueue. ! %(video)s \
+		identity name=audio_input ! decodebin ! mqueue. mqueue. ! %(audio)s
 	""" % {'video': utils.video_sink, 'audio': utils.audio_sink}
 
 	def init_elements(self):
