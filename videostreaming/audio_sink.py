@@ -18,8 +18,7 @@ class CCNAudioPacketizer(CCNPacketizer):
 	def __init__(self, repolocation, uri):
 		self.last_index = None
 
-		handle = pyccn.CCN()
-		publisher = utils.RepoPublisher(handle, 'audio', repolocation)
+		publisher = utils.RepoSocketPublisher()
 		super(CCNAudioPacketizer, self).__init__(publisher, uri)
 
 	def pre_process_buffer(self, buffer):

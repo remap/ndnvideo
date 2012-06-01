@@ -14,8 +14,7 @@ class CCNVideoPacketizer(CCNPacketizer):
 	def __init__(self, repolocation, uri):
 #		self._tc = None
 
-		handle = pyccn.CCN()
-		publisher = utils.RepoPublisher(handle, 'video', repolocation)
+		publisher = utils.RepoSocketPublisher()
 		super(CCNVideoPacketizer, self).__init__(publisher, uri)
 
 #	def post_set_caps(self, caps):
