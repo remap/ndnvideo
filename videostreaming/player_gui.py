@@ -34,8 +34,9 @@ class PlayerWindow(gtk.Window):
 
 	def __init__(self, gst_player, cmd_args):
 		gtk.Window.__init__(self)
+		#gtk.Window.set_property('title', "whatever")
 		self.set_default_size(670, 580)
-
+		self.set_title(cmd_args.URI)
 		self.create_ui()
 
 		self.player = gst_player(self.videowidget, cmd_args)
