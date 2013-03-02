@@ -141,11 +141,13 @@ if __name__ == '__main__':
 
 	uri = sys.argv[1]
 
-	pipeline = gst.parse_launch("autovideosrc ! videorate ! \
-		videoscale ! video/x-raw-yuv,width=320,height=240 ! \
-		timeoverlay shaded-background=true ! \
-		x264enc name=encoder byte-stream=true bitrate=128 speed-preset=veryfast ! \
-		VideoSink location=%s" % uri)
+	pipeline = gst.parse_launch("""
+		videotestsrc pattern=18 ! video/x-raw-yuv,width=704,height=480 ! videorate !
+		timeoverlay shaded-background=true valignment=bottom ! clockoverlay shaded-background=true halignment=right valignment=bottom !
+		tee name=input
+		input. ! queue leaky=1 max-size-buffers=0 max-size-bytes=0 max-size-time=5000000000 ! colorspace ! ximagesink
+		input. ! queue ! x264enc byte-stream=true bitrate=1024 qp-max=30 ! VideoSink location=%s
+	""" % uri)
 
 	loop = gobject.MainLoop()
 	pipeline.set_state(gst.STATE_PLAYING)
