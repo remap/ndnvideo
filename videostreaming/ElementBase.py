@@ -346,6 +346,8 @@ class CCNDepacketizer(pyccn.Closure):
 		self.finish_ccn_loop()
 
 	def check_duration_initial(self):
+		global packet_hdr, packethdr_len, segment_hdr, segment_hdr_len
+
 		last_duration, duration = 0, 0
 
 		interest = pyccn.Interest(childSelector = 1,
@@ -355,14 +357,23 @@ class CCNDepacketizer(pyccn.Closure):
 
 		while True:
 			t_start = time.time()
-			co = self._get_handle.get(self._name_frames, interest)
+			co = self._get_handle.get(self._name_segments, interest)
 			t_end = time.time()
 
 			if co is None:
 				break
 
+			packet = co.content
+			header = packet[:packet_hdr_len]
+			offset, count = struct.unpack(packet_hdr, header)
+			if count == 0 or len(packet) < packet_hdr_len + offset + segment_hdr_len:
+				continue
+
+			offset += packet_hdr_len
+			header = packet[offset:offset + segment_hdr_len]
+			duration = struct.unpack(segment_hdr, header)[1]
+
 			name = co.name[-1:]
-			duration = pyccn.Name.seg2num(co.name[-1])
 			duration_s = duration / float(gst.SECOND)
 
 			#t_packet = co.signedInfo.py_timestamp
