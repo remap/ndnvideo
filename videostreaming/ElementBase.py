@@ -345,29 +345,8 @@ class CCNDepacketizer(pyccn.Closure):
 		self._cmd_q.put([CMD_SEEK, ns])
 		self.finish_ccn_loop()
 
-	def __check_duration(self, interest):
-		t_start = time.time()
-		co = self._get_handle.get(self._name_frames, interest)
-		t_end = time.time()
-
-		if co is None:
-			return None
-
-		name = co.name[-1:]
-		duration = pyccn.Name.seg2num(co.name[-1])
-		t_packet = co.signedInfo.py_timestamp
-		rtt = t_end - t_start
-		t_diff = t_start - t_packet
-
-		print "Duration:", datetime.timedelta(seconds = duration / float(gst.SECOND))
-		print "Packet timestamp:", time.ctime(t_packet)
-		print "Time difference:", datetime.timedelta(seconds = t_diff)
-		print "Rtt:", rtt
-
-		return duration, t_packet, t_diff, rtt, name
-
 	def check_duration_initial(self):
-		duration = None
+		last_duration, duration = 0, 0
 
 		interest = pyccn.Interest(childSelector = 1,
 			answerOriginKind = pyccn.AOK_DEFAULT)
@@ -375,16 +354,37 @@ class CCNDepacketizer(pyccn.Closure):
 		exclude = interest.exclude = pyccn.ExclusionFilter()
 
 		while True:
-			res = self.__check_duration(interest)
-			if res is None:
+			t_start = time.time()
+			co = self._get_handle.get(self._name_frames, interest)
+			t_end = time.time()
+
+			if co is None:
 				break
 
-			duration, t_packet, t_diff, rtt, name = res
+			name = co.name[-1:]
+			duration = pyccn.Name.seg2num(co.name[-1])
+			duration_s = duration / float(gst.SECOND)
+
+			#t_packet = co.signedInfo.py_timestamp
+			rtt = t_end - t_start
+			#t_diff = t_start - t_packet
+
+			print "Duration:", datetime.timedelta(seconds = duration_s)
+			print "Duration diff:", duration_s - last_duration
+			print "Rtt:", rtt
+			print "Rtt diff", duration_s - last_duration - rtt
+			#print "Packet timestamp:", time.ctime(t_packet)
+			#print "Time difference:", datetime.timedelta(seconds = t_diff), t_diff
+
+			if duration_s - last_duration - rtt < 0.001:
+				break
 
 			print "Excluding %r" % name
 			exclude.reset()
 			exclude.add_any()
 			exclude.add_name(name)
+
+			last_duration = duration_s
 
 		return duration
 
