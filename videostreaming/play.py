@@ -39,6 +39,11 @@ class GstPlayer(player.GstPlayer):
 			"Buffer: %d%% (playing: %s)" % (video_status, audio_status, self.stats_buffering_percent, "Yes" if self.playing else "No"))
 		return True
 
+	def set_buffering(self, enable, max_time):
+		mqueue = self.player.get_by_name('mqueue')
+		mqueue.set_property('use-buffering', enable)
+		mqueue.set_property('max-size-time', long(max_time * 1000000))
+
 	def set_location(self, location):
 		self.vsrc.set_property('location', "%s/video" % location)
 		self.asrc.set_property('location', "%s/audio" % location)
@@ -56,6 +61,8 @@ def main():
 	parser = argparse.ArgumentParser(description = 'Plays audio/video stream.', add_help = False)
 	parser.add_argument('--player-help', action="help", help = "show this help message and exit")
 	parser.add_argument('-l', '--live', action="store_true", help = 'play in live mode')
+	parser.add_argument('-d', '--disable-buffering', action="store_false", help = 'disable buffering')
+	parser.add_argument('-t', '--max-time', default = 500, type=float, help = 'maximum buffer time for multiqueue (in ms)')
 	parser.add_argument('URI', help = 'URI of the video stream')
 
 	cmd_args = parser.parse_args()
@@ -66,6 +73,7 @@ def main():
 		return 1
 
 	w = player_gui.PlayerWindow(GstPlayer, cmd_args)
+	w.player.set_buffering(cmd_args.disable_buffering, cmd_args.max_time)
 	w.load_file(str(name))
 	w.show_all()
 	gtk.main()
