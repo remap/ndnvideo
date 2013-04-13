@@ -69,6 +69,10 @@ however you may need to videoscale to specific supported size listed by:
 
 gst-inspect ximagesink
 
+note we expect xvimagesink - but if you're in a VM or otherwise have no acceleration, change line 16 in utils.py from merely xvimagesink to:
+
+video_sink = "ffmpegcolorspace ! videoscale ! ximagesink window-width=704 window-height=480"
+
 can also try:
 
 ./ccn_launch.py VideoSrc location=/ndn/ucla.edu/apps/video/hydra/ ! \
