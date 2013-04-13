@@ -14,7 +14,10 @@ Dependencies & installing:
 - pyccn (git://github.com/remap/PyCCN.git)
 - ndnvideo (play_latest branch - git://github.com/remap/ndnvideo.git)
 
+- gstreamer 0.10 - will NOT WORK with 1.0... must restrict packages to 0.10 for ndnvideo compatibilty. 
+
 from there, platform specific, incomplete list below:
+
 
 ubuntu:
 gstreamer0.10-plugins-ugly (for x264 encoding)
