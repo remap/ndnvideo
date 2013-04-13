@@ -22,6 +22,7 @@ from there, platform specific, incomplete list below:
 ubuntu:
 gstreamer0.10-plugins-ugly (for x264 encoding)
 python-gst0.10-dev (for gst-python)
+gstreamer0.10-ffmpeg
 
 OSX:
 
