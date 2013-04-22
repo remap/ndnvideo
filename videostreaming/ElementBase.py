@@ -242,6 +242,9 @@ class CCNDepacketizer(pyccn.Closure):
 		# maximum number of buffers we can hold in memory waiting to be processed
 		self.queue = Queue.Queue(window * 2)
 
+		# publisher's id
+		self.publisher_id = None
+
 		# duration of the stream (in nanoseconds)
 		self.duration_ns = None
 
@@ -289,7 +292,7 @@ class CCNDepacketizer(pyccn.Closure):
 		name = self._uri.append('stream_info')
 		debug(self, "Fetching stream_info from %s ..." % name)
 
-		co = self._get_handle.get(name)
+		co = self._get_handle.get(name, pyccn.Interest(publisherPublicKeyDigest = self.publisher_id))
 		if not co:
 			debug(self, "Unable to fetch %s" % name)
 			exit(10)
@@ -308,7 +311,7 @@ class CCNDepacketizer(pyccn.Closure):
 
 	def fetch_start_time(self):
 		name = self._name_segments.appendSegment(0)
-		co = self._get_handle.get(name)
+		co = self._get_handle.get(name, pyccn.Interest(publisherPublicKeyDigest = self.publisher_id))
 		if not co:
 			debug(self, "Unable to fetch %s" % name)
 			exit(10)
@@ -350,8 +353,8 @@ class CCNDepacketizer(pyccn.Closure):
 
 		last_duration, duration = 0, 0
 
-		interest = pyccn.Interest(childSelector = 1,
-			answerOriginKind = pyccn.AOK_DEFAULT)
+		interest = pyccn.Interest(publisherPublicKeyDigest = self.publisher_id,
+			childSelector = 1, answerOriginKind = pyccn.AOK_DEFAULT)
 
 		exclude = interest.exclude = pyccn.ExclusionFilter()
 
@@ -439,8 +442,8 @@ class CCNDepacketizer(pyccn.Closure):
 
 		#debug(self, "Fetching segment number before %s" % index)
 
-		interest = pyccn.Interest(childSelector = 1,
-			answerOriginKind = pyccn.AOK_NONE)
+		interest = pyccn.Interest(publisherPublicKeyDigest = self.publisher_id,
+			childSelector = 1, answerOriginKind = pyccn.AOK_NONE)
 		interest.exclude = pyccn.ExclusionFilter()
 		interest.exclude.add_name(pyccn.Name([index]))
 		interest.exclude.add_any()
@@ -482,7 +485,7 @@ class CCNDepacketizer(pyccn.Closure):
 		return pyccn.RESULT_OK
 
 	def check_duration(self):
-		interest = pyccn.Interest(childSelector = 1)
+		interest = pyccn.Interest(publisherPublicKeyDigest = self.publisher_id, childSelector = 1)
 
 		if self._duration_last:
 			interest.exclude = pyccn.ExclusionFilter()
@@ -497,7 +500,7 @@ class CCNDepacketizer(pyccn.Closure):
 		#debug(self, "Issuing an interest for: %s" % name)
 		self._tmp_retry_requests[str(name[-1])] = (self.interest_retries, time.time())
 
-		interest = pyccn.Interest(interestLifetime = self.interest_lifetime)
+		interest = pyccn.Interest(publisherPublicKeyDigest = self.publisher_id, interestLifetime = self.interest_lifetime)
 		self._handle.expressInterest(name, self, interest)
 
 		return True

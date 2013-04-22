@@ -10,6 +10,7 @@ import gtk
 import gst
 
 import sys, argparse
+import base64
 
 import player, player_gui
 import utils
@@ -54,6 +55,11 @@ class GstPlayer(player.GstPlayer):
 		self.vsrc.link(video_input)
 		self.asrc.link(audio_input)
 
+	def set_publisher_id(self, publisher_id):
+		id = base64.b64encode(publisher_id)
+		self.vsrc.set_property('publisher', id)
+		self.asrc.set_property('publisher', id)
+
 def main():
 	gobject.threads_init()
 	gtk.gdk.threads_init()
@@ -63,18 +69,23 @@ def main():
 	parser.add_argument('-l', '--live', action="store_true", help = 'play in live mode')
 	parser.add_argument('-d', '--disable-buffering', action="store_false", help = 'disable buffering')
 	parser.add_argument('-t', '--max-time', default = 500, type=float, help = 'maximum buffer time for multiqueue (in ms)')
+	parser.add_argument('-p', '--publisher-id', help = 'fetch data only from specific publisher (in base64)')
 	parser.add_argument('URI', help = 'URI of the video stream')
 
 	cmd_args = parser.parse_args()
-#
-	name = player.get_latest_version(cmd_args.URI)
+
+	publisher_id = base64.b64decode(cmd_args.publisher_id) if cmd_args.publisher_id else None
+
+	name, publisher_id = player.get_latest_version(cmd_args.URI, publisher_id)
 	if name is None:
 		print "No content found at %s" % cmd_args.URI
 		return 1
 
+	print("Fetching data from publisher: %s" % base64.b64encode(publisher_id))
+
 	w = player_gui.PlayerWindow(GstPlayer, cmd_args)
 	w.player.set_buffering(cmd_args.disable_buffering, cmd_args.max_time)
-	w.load_file(str(name))
+	w.load_file(str(name), publisher_id)
 	w.show_all()
 	gtk.main()
 
