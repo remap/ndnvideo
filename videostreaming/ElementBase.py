@@ -242,6 +242,9 @@ class CCNDepacketizer(pyccn.Closure):
 		# maximum number of buffers we can hold in memory waiting to be processed
 		self.queue = Queue.Queue(window * 2)
 
+		# publisher's id
+		self.publisher_id = None
+
 		# duration of the stream (in nanoseconds)
 		self.duration_ns = None
 
@@ -289,7 +292,7 @@ class CCNDepacketizer(pyccn.Closure):
 		name = self._uri.append('stream_info')
 		debug(self, "Fetching stream_info from %s ..." % name)
 
-		co = self._get_handle.get(name)
+		co = self._get_handle.get(name, pyccn.Interest(publisherPublicKeyDigest = self.publisher_id))
 		if not co:
 			debug(self, "Unable to fetch %s" % name)
 			exit(10)
@@ -308,7 +311,7 @@ class CCNDepacketizer(pyccn.Closure):
 
 	def fetch_start_time(self):
 		name = self._name_segments.appendSegment(0)
-		co = self._get_handle.get(name)
+		co = self._get_handle.get(name, pyccn.Interest(publisherPublicKeyDigest = self.publisher_id))
 		if not co:
 			debug(self, "Unable to fetch %s" % name)
 			exit(10)
@@ -345,46 +348,57 @@ class CCNDepacketizer(pyccn.Closure):
 		self._cmd_q.put([CMD_SEEK, ns])
 		self.finish_ccn_loop()
 
-	def __check_duration(self, interest):
-		t_start = time.time()
-		co = self._get_handle.get(self._name_frames, interest)
-		t_end = time.time()
-
-		if co is None:
-			return None
-
-		name = co.name[-1:]
-		duration = pyccn.Name.seg2num(co.name[-1])
-		t_packet = co.signedInfo.py_timestamp
-		rtt = t_end - t_start
-		t_diff = t_start - t_packet
-
-		print "Duration:", datetime.timedelta(seconds = duration / float(gst.SECOND))
-		print "Packet timestamp:", time.ctime(t_packet)
-		print "Time difference:", datetime.timedelta(seconds = t_diff)
-		print "Rtt:", rtt
-
-		return duration, t_packet, t_diff, rtt, name
-
 	def check_duration_initial(self):
-		duration = None
+		global packet_hdr, packethdr_len, segment_hdr, segment_hdr_len
 
-		interest = pyccn.Interest(childSelector = 1,
-			answerOriginKind = pyccn.AOK_DEFAULT)
+		last_duration, duration = 0, 0
+
+		interest = pyccn.Interest(publisherPublicKeyDigest = self.publisher_id,
+			childSelector = 1, answerOriginKind = pyccn.AOK_DEFAULT)
 
 		exclude = interest.exclude = pyccn.ExclusionFilter()
 
 		while True:
-			res = self.__check_duration(interest)
-			if res is None:
+			t_start = time.time()
+			co = self._get_handle.get(self._name_segments, interest)
+			t_end = time.time()
+
+			if co is None:
 				break
 
-			duration, t_packet, t_diff, rtt, name = res
+			packet = co.content
+			header = packet[:packet_hdr_len]
+			offset, count = struct.unpack(packet_hdr, header)
+			if count == 0 or len(packet) < packet_hdr_len + offset + segment_hdr_len:
+				continue
+
+			offset += packet_hdr_len
+			header = packet[offset:offset + segment_hdr_len]
+			duration = struct.unpack(segment_hdr, header)[1]
+
+			name = co.name[-1:]
+			duration_s = duration / float(gst.SECOND)
+
+			#t_packet = co.signedInfo.py_timestamp
+			rtt = t_end - t_start
+			#t_diff = t_start - t_packet
+
+			print "Duration:", datetime.timedelta(seconds = duration_s)
+			print "Duration diff:", duration_s - last_duration
+			print "Rtt:", rtt
+			print "Rtt diff", duration_s - last_duration - rtt
+			#print "Packet timestamp:", time.ctime(t_packet)
+			#print "Time difference:", datetime.timedelta(seconds = t_diff), t_diff
+
+			if duration_s - last_duration - rtt < 0.001:
+				break
 
 			print "Excluding %r" % name
 			exclude.reset()
 			exclude.add_any()
 			exclude.add_name(name)
+
+			last_duration = duration_s
 
 		return duration
 
@@ -428,8 +442,8 @@ class CCNDepacketizer(pyccn.Closure):
 
 		#debug(self, "Fetching segment number before %s" % index)
 
-		interest = pyccn.Interest(childSelector = 1,
-			answerOriginKind = pyccn.AOK_NONE)
+		interest = pyccn.Interest(publisherPublicKeyDigest = self.publisher_id,
+			childSelector = 1, answerOriginKind = pyccn.AOK_NONE)
 		interest.exclude = pyccn.ExclusionFilter()
 		interest.exclude.add_name(pyccn.Name([index]))
 		interest.exclude.add_any()
@@ -471,7 +485,7 @@ class CCNDepacketizer(pyccn.Closure):
 		return pyccn.RESULT_OK
 
 	def check_duration(self):
-		interest = pyccn.Interest(childSelector = 1)
+		interest = pyccn.Interest(publisherPublicKeyDigest = self.publisher_id, childSelector = 1)
 
 		if self._duration_last:
 			interest.exclude = pyccn.ExclusionFilter()
@@ -486,7 +500,7 @@ class CCNDepacketizer(pyccn.Closure):
 		#debug(self, "Issuing an interest for: %s" % name)
 		self._tmp_retry_requests[str(name[-1])] = (self.interest_retries, time.time())
 
-		interest = pyccn.Interest(interestLifetime = self.interest_lifetime)
+		interest = pyccn.Interest(publisherPublicKeyDigest = self.publisher_id, interestLifetime = self.interest_lifetime)
 		self._handle.expressInterest(name, self, interest)
 
 		return True

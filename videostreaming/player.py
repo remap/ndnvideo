@@ -9,16 +9,16 @@ import gst
 
 import pyccn
 
-def get_latest_version(name):
+def get_latest_version(name, publisher_id):
 	n = pyccn.Name(name)
-	i = pyccn.Interest(childSelector = 1, answerOriginKind = pyccn.AOK_NONE)
+	i = pyccn.Interest(publisherPublicKeyDigest = publisher_id, childSelector = 1, answerOriginKind = pyccn.AOK_NONE)
 
 	handle = pyccn.CCN()
 	co = handle.get(n,i)
 	if co is None:
-		return None
+		return None, None
 
-	return co.name[:len(n) + 1]
+	return co.name[:len(n) + 1], co.signedInfo.publisherPublicKeyDigest
 
 class GstPlayer(gobject.GObject):
 	__gsignals__ = {
@@ -99,6 +99,9 @@ class GstPlayer(gobject.GObject):
 		return False
 
 	def set_location(self, location):
+		pass
+
+	def set_publisher_id(self, publisher):
 		pass
 
 	def query_position(self):

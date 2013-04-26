@@ -17,7 +17,7 @@ from video_src import VideoSrc
 
 class GstPlayer(player.GstPlayer):
 	__pipeline = """
-		queue2 name=video_input use-buffering=true ! decodebin2 ! %s
+		queue2 name=video_input use-buffering=true max-size-time=500000000 ! decodebin2 ! %s
 	""" % utils.video_sink
 
 	def init_elements(self):

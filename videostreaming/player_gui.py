@@ -59,8 +59,9 @@ class PlayerWindow(gtk.Window):
 			gtk.main_quit()
 		self.connect('delete-event', lambda * x: on_delete_event())
 
-	def load_file(self, location):
+	def load_file(self, location, publisher_id = None):
 		self.player.set_location(location)
+		self.player.set_publisher_id(publisher_id)
 
 	def create_ui(self):
 		vbox = gtk.VBox()

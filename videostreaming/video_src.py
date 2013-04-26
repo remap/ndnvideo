@@ -6,6 +6,8 @@ pygst.require("0.10")
 import gst
 import gobject
 
+import base64
+
 import utils
 from ElementBase import CCNDepacketizer
 
@@ -50,12 +52,19 @@ class VideoSrc(ElementBase.CCNElementSrc):
 			'CCNx location',
 			'location of the stream in CCNx network',
 			'',
+			gobject.PARAM_READWRITE),
+		'publisher' : (gobject.TYPE_STRING,
+			'Publisher ID',
+			'base64 encoding of publisher\'s public key',
+			'',
 			gobject.PARAM_READWRITE)
 	}
 
 	def do_set_property(self, property, value):
 		if property.name == 'location':
 			self.depacketizer = CCNVideoDepacketizer(value, 18)
+		elif property.name == 'publisher':
+			self.depacketizer.publisher_id = base64.b64decode(value)
 		else:
 			raise AttributeError, 'unknown property %s' % property.name
 

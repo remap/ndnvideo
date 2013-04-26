@@ -6,6 +6,8 @@ pygst.require("0.10")
 import gst
 import gobject
 
+import base64
+
 import Queue, traceback
 import pyccn
 
@@ -36,12 +38,19 @@ class AudioSrc(ElementBase.CCNElementSrc):
 			'CCNx location',
 			'location of the stream in CCNx network',
 			'',
+			gobject.PARAM_READWRITE),
+		'publisher' : (gobject.TYPE_STRING,
+			'Publisher ID',
+			'base64 encoding of publisher\'s public key',
+			'',
 			gobject.PARAM_READWRITE)
 	}
 
 	def do_set_property(self, property, value):
 		if property.name == 'location':
 			self.depacketizer = CCNAudioDepacketizer(value, 3)
+		elif property.name == 'publisher':
+			self.depacketizer.publisher_id = base64.b64decode(value)
 		else:
 			raise AttributeError, 'unknown property %s' % property.name
 
