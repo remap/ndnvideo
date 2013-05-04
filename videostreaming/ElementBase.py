@@ -476,6 +476,7 @@ class CCNDepacketizer(pyccn.Closure):
 			self._duration_last = info.ContentObject.name[-1]
 		else:
 			debug(self, "No response received for duration request")
+			self._duration_last = None
 
 		if self._duration_last:
 			self.duration_ns = self.index2ts(self._duration_last)
