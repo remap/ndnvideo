@@ -275,8 +275,8 @@ class CCNDepacketizer(pyccn.Closure):
 		self._segmenter = DataSegmenter(self.push_data)
 
 		self._stats = {
-			'srtt': 0.05,
-			'rttvar': 0.01 \
+			'srtt': 1.0,
+			'rttvar': 0.05 \
 		}
 
 		self._stats_retries = 0
@@ -501,6 +501,7 @@ class CCNDepacketizer(pyccn.Closure):
 		#debug(self, "Issuing an interest for: %s" % name)
 		self._tmp_retry_requests[str(name[-1])] = (self.interest_retries, time.time())
 
+		self.interest_lifetime = self._stats['srtt'] + 3 * math.sqrt(self._stats['rttvar'])
 		interest = pyccn.Interest(publisherPublicKeyDigest = self.publisher_id, interestLifetime = self.interest_lifetime)
 		self._handle.expressInterest(name, self, interest)
 
@@ -541,15 +542,19 @@ class CCNDepacketizer(pyccn.Closure):
 
 		elif kind == pyccn.UPCALL_CONTENT:
 			name = str(info.Interest.name[-1])
-			n_rtt = time.time() - self._tmp_retry_requests[name][1]
+			if name in self._tmp_retry_requests:
+				n_rtt = time.time() - self._tmp_retry_requests[name][1]
 
-			difference = n_rtt - self._stats['srtt']
-			self._stats['srtt'] += 1 / 8.0 * difference
-			self._stats['rttvar'] += 1 / 4.0 * (abs(difference) - self._stats['rttvar'])
-			self.interest_lifetime = self._stats['srtt'] + 3 * math.sqrt(self._stats['rttvar'])
+				difference = n_rtt - self._stats['srtt']
+				self._stats['srtt'] += 1 / 8.0 * difference
+				self._stats['rttvar'] += 1 / 4.0 * (abs(difference) - self._stats['rttvar'])
+				del self._tmp_retry_requests[name]
+			else:
+				debug(self, "Got ContentObject but I'm missing RTT record")
+
+			#self.interest_lifetime = self._stats['srtt'] + 3 * math.sqrt(self._stats['rttvar'])
 			#print "Roundtrip:", n_rtt, self.interest_lifetime, self.interest_lifetime - n_rtt
 
-			del self._tmp_retry_requests[name]
 			self._pipeline.put(pyccn.Name.seg2num(info.ContentObject.name[-1]),
 							info.ContentObject)
 			return pyccn.RESULT_OK
@@ -557,7 +562,7 @@ class CCNDepacketizer(pyccn.Closure):
 		elif kind == pyccn.UPCALL_INTEREST_TIMED_OUT:
 			name = str(info.Interest.name[-1])
 
-			self.interest_lifetime = None
+			self._stats['srtt'] = min(5, self._stats['srtt'] + 0.4)
 
 			req = self._tmp_retry_requests[name]
 			if req[0]:
