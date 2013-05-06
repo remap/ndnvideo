@@ -17,12 +17,11 @@ playing remote stream:
 
 make sure ccnd is running, and has a route to a testbed node.
 
-
 ./play.py /ndn/ucla.edu/apps/video
-
 
 if that doesn't work, see 'troubleshooting', below. 
 
+(For fine tuning performance based on transport, see 'command line arguments' below)
 
 publishing local video:
 
@@ -30,7 +29,6 @@ make sure CCNR_DIRECTORY is set and sourced (we recommend to define it in ~/.pro
 make sure ccnd & ccnr (your local repo) are running, and are routed (for others to access)
 
 note:  you may need to manually create CCNR_DIRECTORY/import/ directory
-
 
 if you don't have a working video URI, there are a few options:
 
@@ -49,6 +47,37 @@ yet another option is to use a file instead of a capture device:
 3) ./ccn_launch.py filesrc location=[filename.mp4] ! typefind ! qtdemux name=mux \
 mux.video_00 ! queue ! VideoSink location=/repo/test/mainvideo/video \
 mux.audio_00 ! queue ! AudioSink location=/repo/test/mainvideo/audio
+
+
+Command Line Arguments (play.py):
+
+-r <int> - how many times resend interest before giving up (default 1)
+Ê Ê Ê Ê Ê Ê0 means to not retry.
+-a/-v <int> - how large the pipeline should be for audio and video.
+Ê Ê Ê Ê Ê Ê Ê Defaults are 18 and 3 (for video and audio
+Ê Ê Ê Ê Ê Ê Ê respectively).
+-d  disables video pausing when one of the stream pipelines gets low
+
+
+While -r probably is self explanatory, -a and -v might need more
+explanation. 
+
+Those variables basically control the number of interests
+issued that did not get response yet. So for value 18 it means the
+code issues 18 interests and stops, once it gets let say 5 responses
+it will issue next 5 interests trying to maintain 18 pending. It might
+have some negative effect on latency.
+
+18 and 3 was picked by authors empirically and it worked fine in TCP or UDP over multiple 'hops'. 
+With TCP it is not enough (because TCP increases latency). I really
+did not experiment with it but having it set to 36 and 6 (doubling the
+values) resulted in normal playback. Values larger than that are not recommended. 
+
+-d  makes the player continue to play even when there is
+no data in one stream or both. So if one stream gets behind, it will
+had to catch up. There's no logic to skip the data. This probably
+might not work too bad when you have more bandwidth than is necessary
+for the playback.
 
 Troubleshooting:
 
