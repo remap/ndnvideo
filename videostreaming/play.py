@@ -40,11 +40,6 @@ class GstPlayer(player.GstPlayer):
 			"Buffer: %d%% (playing: %s)" % (video_status, audio_status, self.stats_buffering_percent, "Yes" if self.playing else "No"))
 		return True
 
-	def set_buffering(self, enable, max_time):
-		mqueue = self.player.get_by_name('mqueue')
-		mqueue.set_property('use-buffering', enable)
-		mqueue.set_property('max-size-time', long(max_time * 1000000))
-
 	def set_location(self, location):
 		self.vsrc.set_property('location', "%s/video" % location)
 		self.asrc.set_property('location', "%s/audio" % location)
@@ -60,6 +55,15 @@ class GstPlayer(player.GstPlayer):
 		self.vsrc.set_property('publisher', id)
 		self.asrc.set_property('publisher', id)
 
+	def set_parameters(self):
+		mqueue = self.player.get_by_name('mqueue')
+		mqueue.set_property('use-buffering', self.cmd_args.disable_buffering)
+		mqueue.set_property('max-size-time', long(self.cmd_args.max_time * 1000000))
+
+		if self.cmd_args.retry_count is not None:
+			self.vsrc.set_property('interest-retry', self.cmd_args.retry_count)
+			self.asrc.set_property('interest-retry', self.cmd_args.retry_count)
+
 def main():
 	gobject.threads_init()
 	gtk.gdk.threads_init()
@@ -70,6 +74,7 @@ def main():
 	parser.add_argument('-d', '--disable-buffering', action="store_false", help = 'disable buffering')
 	parser.add_argument('-t', '--max-time', default = 500, type=float, help = 'maximum buffer time for multiqueue (in ms)')
 	parser.add_argument('-p', '--publisher-id', help = 'fetch data only from specific publisher (in base64)')
+	parser.add_argument('-r', '--retry-count', type=int, help = 'how many times retransmit an interest before giving up')
 	parser.add_argument('URI', help = 'URI of the video stream')
 
 	cmd_args = parser.parse_args()
@@ -84,7 +89,6 @@ def main():
 	print("Fetching data from publisher: %s" % base64.b64encode(publisher_id))
 
 	w = player_gui.PlayerWindow(GstPlayer, cmd_args)
-	w.player.set_buffering(cmd_args.disable_buffering, cmd_args.max_time)
 	w.load_file(str(name), publisher_id)
 	w.show_all()
 	gtk.main()

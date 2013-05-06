@@ -57,6 +57,11 @@ class VideoSrc(ElementBase.CCNElementSrc):
 			'Publisher ID',
 			'base64 encoding of publisher\'s public key',
 			'',
+			gobject.PARAM_READWRITE),
+		'interest-retry' : (gobject.TYPE_UINT,
+			'Number of Interest retries',
+			'How many times reexpress interest before giving up',
+			0, 255, 1,
 			gobject.PARAM_READWRITE)
 	}
 
@@ -65,6 +70,8 @@ class VideoSrc(ElementBase.CCNElementSrc):
 			self.depacketizer = CCNVideoDepacketizer(value, 18)
 		elif property.name == 'publisher':
 			self.depacketizer.publisher_id = base64.b64decode(value)
+		elif property.name == 'interest-retry':
+			self.depacketizer.interest_retries = value
 		else:
 			raise AttributeError, 'unknown property %s' % property.name
 

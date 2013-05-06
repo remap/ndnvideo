@@ -104,6 +104,9 @@ class GstPlayer(gobject.GObject):
 	def set_publisher_id(self, publisher):
 		pass
 
+	def set_parameters(self):
+		pass
+
 	def query_position(self):
 		"Returns a (position, duration) tuple"
 		try:

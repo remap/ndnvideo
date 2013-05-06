@@ -232,12 +232,12 @@ class CCNPacketizer(object):
 				flush = result[1])
 
 class CCNDepacketizer(pyccn.Closure):
-	def __init__(self, uri, window = None, retries = None):
+	def __init__(self, uri, window = None, retries = 1):
 		# size of the pipeline
 		window = window or 1
 
 		# how many times to retry request
-		self.interest_retries = retries or 1
+		self.interest_retries = retries
 
 		# maximum number of buffers we can hold in memory waiting to be processed
 		self.queue = Queue.Queue(window * 2)

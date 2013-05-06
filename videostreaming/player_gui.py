@@ -62,6 +62,7 @@ class PlayerWindow(gtk.Window):
 	def load_file(self, location, publisher_id = None):
 		self.player.set_location(location)
 		self.player.set_publisher_id(publisher_id)
+		self.player.set_parameters()
 
 	def create_ui(self):
 		vbox = gtk.VBox()
