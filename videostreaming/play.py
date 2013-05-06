@@ -64,6 +64,11 @@ class GstPlayer(player.GstPlayer):
 			self.vsrc.set_property('interest-retry', self.cmd_args.retry_count)
 			self.asrc.set_property('interest-retry', self.cmd_args.retry_count)
 
+		if self.cmd_args.video_pipeline_size is not None:
+			self.vsrc.set_property('pipeline-size', self.cmd_args.video_pipeline_size)
+
+		if self.cmd_args.audio_pipeline_size is not None:
+			self.asrc.set_property('pipeline-size', self.cmd_args.audio_pipeline_size)
 def main():
 	gobject.threads_init()
 	gtk.gdk.threads_init()
@@ -75,6 +80,8 @@ def main():
 	parser.add_argument('-t', '--max-time', default = 500, type=float, help = 'maximum buffer time for multiqueue (in ms)')
 	parser.add_argument('-p', '--publisher-id', help = 'fetch data only from specific publisher (in base64)')
 	parser.add_argument('-r', '--retry-count', type=int, help = 'how many times retransmit an interest before giving up')
+	parser.add_argument('-v', '--video-pipeline-size', type=int, help = 'Maximum number of pending interests for video stream')
+	parser.add_argument('-a', '--audio-pipeline-size', type=int, help = 'Maximum number of pending interests for audio stream')
 	parser.add_argument('URI', help = 'URI of the video stream')
 
 	cmd_args = parser.parse_args()

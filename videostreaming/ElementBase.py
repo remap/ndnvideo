@@ -232,15 +232,15 @@ class CCNPacketizer(object):
 				flush = result[1])
 
 class CCNDepacketizer(pyccn.Closure):
-	def __init__(self, uri, window = None, retries = 1):
+	def __init__(self, uri, window = 1, retries = 1):
 		# size of the pipeline
-		window = window or 1
+		self.window = window
 
 		# how many times to retry request
 		self.interest_retries = retries
 
 		# maximum number of buffers we can hold in memory waiting to be processed
-		self.queue = Queue.Queue(window * 2)
+		self.queue = None
 
 		# publisher's id
 		self.publisher_id = None
@@ -270,8 +270,7 @@ class CCNDepacketizer(pyccn.Closure):
 		self._name_segments = self._uri + 'segments'
 		self._name_frames = self._uri + 'index'
 
-		self._pipeline = utils.PipelineFetch(window, self.issue_interest,
-				self.process_response)
+		self._pipeline = None
 		self._segmenter = DataSegmenter(self.push_data)
 
 		self._stats = {
@@ -330,6 +329,11 @@ class CCNDepacketizer(pyccn.Closure):
 		return self._caps
 
 	def start(self):
+		# maximum number of buffers we can hold in memory waiting to be processed
+		self.queue = Queue.Queue(self.window * 2)
+		self._pipeline = utils.PipelineFetch(self.window, self.issue_interest,
+				self.process_response)
+
 		self._receiver_thread = threading.Thread(target = self.run)
 		self._running = True
 		self._receiver_thread.start()

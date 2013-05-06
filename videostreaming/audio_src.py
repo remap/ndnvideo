@@ -48,6 +48,11 @@ class AudioSrc(ElementBase.CCNElementSrc):
 			'Number of Interest retries',
 			'How many times reexpress interest before giving up',
 			0, 255, 1,
+			gobject.PARAM_READWRITE),
+		'pipeline-size' : (gobject.TYPE_UINT,
+			'Size of the pipeline',
+			'Maximum number of pending interests',
+			1, 256, 18,
 			gobject.PARAM_READWRITE)
 	}
 
@@ -58,6 +63,8 @@ class AudioSrc(ElementBase.CCNElementSrc):
 			self.depacketizer.publisher_id = base64.b64decode(value)
 		elif property.name == 'interest-retry':
 			self.depacketizer.interest_retries = value
+		elif property.name == 'pipeline-size':
+			self.depacketizer.window = value
 		else:
 			raise AttributeError, 'unknown property %s' % property.name
 
