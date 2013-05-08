@@ -274,8 +274,8 @@ class CCNDepacketizer(pyccn.Closure):
 		self._segmenter = DataSegmenter(self.push_data)
 
 		self._stats = {
-			'srtt': 1.0,
-			'rttvar': 0.05 \
+			'srtt': 0.6,
+			'rttvar': 0.15 \
 		}
 
 		self._stats_retries = 0
@@ -505,9 +505,9 @@ class CCNDepacketizer(pyccn.Closure):
 		name = self._name_segments.appendSegment(segment)
 
 		#debug(self, "Issuing an interest for: %s" % name)
-		self._tmp_retry_requests[str(name[-1])] = (self.interest_retries, time.time())
+		self.interest_lifetime = min(2.0, self._stats['srtt'] + 3 * self._stats['rttvar'])
+		self._tmp_retry_requests[str(name[-1])] = (self.interest_retries, time.time(), self.interest_lifetime)
 
-		self.interest_lifetime = min(1.5, self._stats['srtt'] + 3 * self._stats['rttvar'])
 		interest = pyccn.Interest(publisherPublicKeyDigest = self.publisher_id, interestLifetime = self.interest_lifetime)
 		self._handle.expressInterest(name, self, interest)
 
@@ -552,8 +552,8 @@ class CCNDepacketizer(pyccn.Closure):
 				n_rtt = time.time() - self._tmp_retry_requests[name][1]
 
 				difference = n_rtt - self._stats['srtt']
-				self._stats['srtt'] += 1 / 8.0 * difference
-				self._stats['rttvar'] += 1 / 4.0 * (abs(difference) - self._stats['rttvar'])
+				self._stats['srtt'] += 1 / 32.0 * difference
+				self._stats['rttvar'] += 1 / 16.0 * (abs(difference) - self._stats['rttvar'])
 				del self._tmp_retry_requests[name]
 			else:
 				debug(self, "Got ContentObject but I'm missing RTT record")
@@ -567,18 +567,17 @@ class CCNDepacketizer(pyccn.Closure):
 
 		elif kind == pyccn.UPCALL_INTEREST_TIMED_OUT:
 			name = str(info.Interest.name[-1])
-
-			#self._stats['srtt'] = min(1.0, self._stats['srtt'] + 0.05)
-
 			req = self._tmp_retry_requests[name]
-			if req[0]:
-#				debug(self, "timeout for %s - re-expressing" % info.Interest.name)
-				self._stats_retries += 1
 
-				self._tmp_retry_requests[name] = (req[0], time.time())
+			difference = req[2] - self._stats['srtt']
+			self._stats['srtt'] += 1 / 32.0 * difference
+			self._stats['rttvar'] += 1 / 16.0 * (abs(difference) - self._stats['rttvar'])
+
+			if req[0] > 0:
+				self._stats_retries += 1
+				self._tmp_retry_requests[name] = (req[0] - 1, time.time(), req[2])
 				return pyccn.RESULT_REEXPRESS
 
-#			debug(self, "timeout for %r - skipping" % info.Interest.name)
 			self._stats_drops += 1
 			del self._tmp_retry_requests[name]
 			self._pipeline.timeout(pyccn.Name.seg2num(info.Interest.name[-1]))
