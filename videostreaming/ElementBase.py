@@ -507,7 +507,7 @@ class CCNDepacketizer(pyccn.Closure):
 		#debug(self, "Issuing an interest for: %s" % name)
 		self._tmp_retry_requests[str(name[-1])] = (self.interest_retries, time.time())
 
-		self.interest_lifetime = self._stats['srtt'] + 3 * math.sqrt(self._stats['rttvar'])
+		self.interest_lifetime = min(1.5, self._stats['srtt'] + 3 * self._stats['rttvar'])
 		interest = pyccn.Interest(publisherPublicKeyDigest = self.publisher_id, interestLifetime = self.interest_lifetime)
 		self._handle.expressInterest(name, self, interest)
 
@@ -568,7 +568,7 @@ class CCNDepacketizer(pyccn.Closure):
 		elif kind == pyccn.UPCALL_INTEREST_TIMED_OUT:
 			name = str(info.Interest.name[-1])
 
-			self._stats['srtt'] = min(5, self._stats['srtt'] + 0.4)
+			#self._stats['srtt'] = min(1.0, self._stats['srtt'] + 0.05)
 
 			req = self._tmp_retry_requests[name]
 			if req[0]:

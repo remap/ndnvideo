@@ -388,7 +388,7 @@ class VersionedPull(pyccn.Closure):
 		return pyccn.RESULT_OK
 
 class PipelineFetch(object):
-	increase_every = 10
+	increase_every = 2
 
 	def __init__(self, window, request_cb, receive_cb):
 		self.window = window
