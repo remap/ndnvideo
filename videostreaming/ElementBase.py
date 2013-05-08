@@ -172,7 +172,7 @@ class CCNPacketizer(object):
 
 		self._key = pyccn.CCN.getDefaultKey()
 		self._signed_info = pyccn.SignedInfo(self._key.publicKeyID, pyccn.KeyLocator(self._name_key), freshness = freshness)
-		self._signed_info_frames = pyccn.SignedInfo(self._key.publicKeyID, pyccn.KeyLocator(self._name_key), freshness = freshness)
+		self._signed_info_frames = pyccn.SignedInfo(self._key.publicKeyID, pyccn.KeyLocator(self._name_key), freshness = 1)
 
 		self._segmenter = DataSegmenter(self.send_data, self._chunk_size)
 
@@ -364,23 +364,25 @@ class CCNDepacketizer(pyccn.Closure):
 
 		while True:
 			t_start = time.time()
-			co = self._get_handle.get(self._name_segments, interest)
+			co = self._get_handle.get(self._name_frames, interest, 4200)
 			t_end = time.time()
 
 			if co is None:
-				break
-
-			packet = co.content
-			header = packet[:packet_hdr_len]
-			offset, count = struct.unpack(packet_hdr, header)
-			if count == 0 or len(packet) < packet_hdr_len + offset + segment_hdr_len:
+#				break
 				continue
 
-			offset += packet_hdr_len
-			header = packet[offset:offset + segment_hdr_len]
-			duration = struct.unpack(segment_hdr, header)[1]
+#			packet = co.content
+#			header = packet[:packet_hdr_len]
+#			offset, count = struct.unpack(packet_hdr, header)
+#			if count == 0 or len(packet) < packet_hdr_len + offset + segment_hdr_len:
+#				continue
+#
+#			offset += packet_hdr_len
+#			header = packet[offset:offset + segment_hdr_len]
+#			duration = struct.unpack(segment_hdr, header)[1]
 
 			name = co.name[-1:]
+			duration = pyccn.Name.seg2num(co.name[-1])
 			duration_s = duration / float(gst.SECOND)
 
 			#t_packet = co.signedInfo.py_timestamp
@@ -657,7 +659,7 @@ class CCNElementSrc(gst.BaseSrc):
 		try:
 			while True:
 				try:
-					status, timestamp, buffer = self.depacketizer.queue.get(True, 1)
+					status, timestamp, buffer = self.depacketizer.queue.get(True, 5)
 					#print "%d %d %d %s" % (buffer.timestamp, buffer.duration, buffer.flags, buffer.caps)
 				except Queue.Empty:
 					if self._no_locking:
