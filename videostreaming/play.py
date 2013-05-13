@@ -37,7 +37,7 @@ class GstPlayer(player.GstPlayer):
 		self.emit("status-updated", 
 			"Video: %s\n"
 			"Audio: %s\n"
-			"Buffer: %d%% (playing: %s)" % (video_status, audio_status, self.stats_buffering_percent, "Yes" if self.playing else "No"))
+			"Multiqueue buffer: %d%% (playing: %s)" % (video_status, audio_status, self.stats_buffering_percent, "Yes" if self.playing else "No"))
 		return True
 
 	def set_location(self, location):
