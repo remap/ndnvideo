@@ -10,10 +10,10 @@ from pytimecode import PyTimeCode
 
 if platform.system() == "Darwin":
 	audio_sink = "audioconvert ! osxaudiosink"
-	video_sink = "colorspace ! ximagesink"
+	video_sink = "ffmpegcolorspace ! videoscale ! ximagesink"
 else:
 	audio_sink = "autoaudiosink"
-	video_sink = "colorspace ! autovideosink"
+	video_sink = "ffmpegcolorspace ! autovideosink"
 
 def read_file(fname):
 	f = open(fname, "rb")
