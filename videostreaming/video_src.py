@@ -98,7 +98,7 @@ if __name__ == '__main__':
 
 	uri = sys.argv[1]
 
-	pipeline = gst.parse_launch('VideoSrc location=%s ! decodebin ! xvimagesink' % uri)
+	pipeline = gst.parse_launch('VideoSrc location=%s ! decodebin ! ximagesink' % uri)
 
 	loop = gobject.MainLoop()
 
