@@ -13,7 +13,8 @@ if platform.system() == "Darwin":
 	video_sink = "ffmpegcolorspace ! videoscale ! ximagesink"
 else:
 	audio_sink = "autoaudiosink"
-	video_sink = "ffmpegcolorspace ! autovideosink"
+#	video_sink = "ffmpegcolorspace ! autovideosink"
+	video_sink = "ffmpegcolorspace ! videoscale ! ximagesink"
 
 def read_file(fname):
 	f = open(fname, "rb")
